@@ -96,6 +96,7 @@ function extractOperations(doc: OpenAPIV3.Document): ParsedOperation[] {
         summary: operation.summary,
         description: operation.description,
         deprecated: operation.deprecated,
+        hidden: (operation as Record<string, unknown>)['x-hidden'] === true,
         parameters,
         requestBody,
         responses,

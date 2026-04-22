@@ -53,6 +53,8 @@ export interface ParsedOperation {
   summary?: string
   description?: string
   deprecated?: boolean
+  /** Set by the `x-hidden: true` vendor extension on the operation. Hidden ops are always removed by `filterOperations`. */
+  hidden?: boolean
   parameters: ParsedParameter[]
   requestBody?: ParsedRequestBody
   responses: Record<string, ParsedResponse>

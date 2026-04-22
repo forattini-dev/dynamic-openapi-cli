@@ -13,6 +13,14 @@ export interface BootstrapArgs {
   selfVersion?: boolean
   /** Show top-level help when no source is provided */
   help?: boolean
+  /** --include-tag entries (repeatable / comma-separated) */
+  includeTags: string[]
+  /** --exclude-tag entries (repeatable / comma-separated) */
+  excludeTags: string[]
+  /** --include-operation entries (repeatable / comma-separated) */
+  includeOperations: string[]
+  /** --exclude-operation entries (repeatable / comma-separated) */
+  excludeOperations: string[]
   /** Remaining argv to hand off to the dynamic CLI */
   rest: string[]
   /** Errors collected during pre-scan */
@@ -25,11 +33,40 @@ const SERVER_INDEX_FLAGS = new Set(['--server-index'])
 const NAME_FLAGS = new Set(['--name'])
 const APP_VERSION_FLAGS = new Set(['--app-version'])
 const SELF_VERSION_FLAGS = new Set(['--self-version'])
+const INCLUDE_TAG_FLAGS = new Set(['--include-tag'])
+const EXCLUDE_TAG_FLAGS = new Set(['--exclude-tag'])
+const INCLUDE_OPERATION_FLAGS = new Set(['--include-operation'])
+const EXCLUDE_OPERATION_FLAGS = new Set(['--exclude-operation'])
 
-const LONG_VALUE_PREFIXES = ['--source=', '--spec=', '--base-url=', '--server-index=', '--name=', '--app-version=']
+const LONG_VALUE_PREFIXES = [
+  '--source=',
+  '--spec=',
+  '--base-url=',
+  '--server-index=',
+  '--name=',
+  '--app-version=',
+  '--include-tag=',
+  '--exclude-tag=',
+  '--include-operation=',
+  '--exclude-operation=',
+]
+
+function pushCsv(target: string[], value: string): void {
+  for (const piece of value.split(',')) {
+    const trimmed = piece.trim()
+    if (trimmed) target.push(trimmed)
+  }
+}
 
 export function preScan(argv: string[]): BootstrapArgs {
-  const args: BootstrapArgs = { rest: [], errors: [] }
+  const args: BootstrapArgs = {
+    rest: [],
+    errors: [],
+    includeTags: [],
+    excludeTags: [],
+    includeOperations: [],
+    excludeOperations: [],
+  }
 
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i]!
@@ -94,6 +131,24 @@ export function preScan(argv: string[]): BootstrapArgs {
       continue
     }
 
+    if (
+      INCLUDE_TAG_FLAGS.has(token) ||
+      EXCLUDE_TAG_FLAGS.has(token) ||
+      INCLUDE_OPERATION_FLAGS.has(token) ||
+      EXCLUDE_OPERATION_FLAGS.has(token)
+    ) {
+      const value = argv[++i]
+      if (value === undefined) {
+        args.errors.push(`Missing value for ${token}`)
+        continue
+      }
+      if (INCLUDE_TAG_FLAGS.has(token)) pushCsv(args.includeTags, value)
+      else if (EXCLUDE_TAG_FLAGS.has(token)) pushCsv(args.excludeTags, value)
+      else if (INCLUDE_OPERATION_FLAGS.has(token)) pushCsv(args.includeOperations, value)
+      else pushCsv(args.excludeOperations, value)
+      continue
+    }
+
     const equalsPrefix = LONG_VALUE_PREFIXES.find((p) => token.startsWith(p))
     if (equalsPrefix) {
       const value = token.slice(equalsPrefix.length)
@@ -120,6 +175,18 @@ export function preScan(argv: string[]): BootstrapArgs {
           break
         case '--app-version':
           args.appVersion = value
+          break
+        case '--include-tag':
+          pushCsv(args.includeTags, value)
+          break
+        case '--exclude-tag':
+          pushCsv(args.excludeTags, value)
+          break
+        case '--include-operation':
+          pushCsv(args.includeOperations, value)
+          break
+        case '--exclude-operation':
+          pushCsv(args.excludeOperations, value)
           break
       }
       continue

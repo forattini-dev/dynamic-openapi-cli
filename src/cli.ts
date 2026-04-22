@@ -1,7 +1,8 @@
 import { loadSpec } from './parser/loader.js'
 import { resolveSpec } from './parser/resolver.js'
+import type { OperationFilters } from './parser/filter.js'
 import { buildCli, runCli } from './cli/app.js'
-import { preScan } from './cli/bootstrap.js'
+import { preScan, type BootstrapArgs } from './cli/bootstrap.js'
 import { runBundle } from './cli/bundle.js'
 
 const SELF_VERSION = '0.1.0'
@@ -20,8 +21,14 @@ Bootstrap flags:
       --server-index <n>        Use the Nth server entry (default: 0)
       --name <string>           Display name in help (for bundled CLIs)
       --app-version <string>    Display version in help (for bundled CLIs)
+      --include-tag <name>      Only expose operations with this tag (repeatable, comma-separated)
+      --exclude-tag <name>      Hide operations with this tag (repeatable, comma-separated)
+      --include-operation <id>  Only expose these operationIds (repeatable, comma-separated)
+      --exclude-operation <id>  Hide these operationIds (repeatable, comma-separated)
       --self-version            Print dynamic-openapi-cli's own version and exit
   -h, --help                    Show this help
+
+  Operations marked with \`x-hidden: true\` in the spec are always hidden.
 
 Subcommands (no spec required):
   bundle                        Package a spec into a standalone bash CLI (run "bundle --help")
@@ -72,6 +79,7 @@ async function main(): Promise<void> {
       version: bootstrap.appVersion,
       baseUrl: bootstrap.baseUrl,
       serverIndex: bootstrap.serverIndex,
+      filters: buildFilters(bootstrap),
     })
     const exitCode = await runCli(cli, bootstrap.rest)
     process.exit(exitCode)
@@ -80,6 +88,21 @@ async function main(): Promise<void> {
     process.stderr.write(`dynamic-openapi-cli: ${msg}\n`)
     process.exit(1)
   }
+}
+
+function buildFilters(args: BootstrapArgs): OperationFilters | undefined {
+  const filters: OperationFilters = {}
+  if (args.includeTags.length > 0 || args.excludeTags.length > 0) {
+    filters.tags = {}
+    if (args.includeTags.length > 0) filters.tags.include = args.includeTags
+    if (args.excludeTags.length > 0) filters.tags.exclude = args.excludeTags
+  }
+  if (args.includeOperations.length > 0 || args.excludeOperations.length > 0) {
+    filters.operations = {}
+    if (args.includeOperations.length > 0) filters.operations.include = args.includeOperations
+    if (args.excludeOperations.length > 0) filters.operations.exclude = args.excludeOperations
+  }
+  return filters.tags || filters.operations ? filters : undefined
 }
 
 main()

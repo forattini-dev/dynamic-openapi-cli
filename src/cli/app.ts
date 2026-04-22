@@ -4,6 +4,7 @@ import type { AuthConfig } from '../auth/types.js'
 import { resolveAuth } from '../auth/resolver.js'
 import { executeOperation, RequestError, ValidationError, resolveBaseUrl, type HttpClientConfig } from '../http/client.js'
 import type { ParsedSpec } from '../parser/types.js'
+import { filterOperations, type OperationFilters } from '../parser/filter.js'
 import type { FetchWithRetryOptions } from '../utils/fetch.js'
 import { buildCommandsFromSpec } from './command-builder.js'
 import { renderResponse, type OutputOptions } from './output.js'
@@ -26,6 +27,8 @@ export interface BuildCliOptions {
   fetchOptions?: FetchWithRetryOptions
   /** Extra headers attached to every request */
   defaultHeaders?: Record<string, string>
+  /** Filter which operations become CLI subcommands. `x-hidden: true` on the operation is always honored. */
+  filters?: OperationFilters
 }
 
 const GLOBAL_OPTIONS = {
@@ -48,7 +51,9 @@ const GLOBAL_OPTIONS = {
 }
 
 export function buildCli(options: BuildCliOptions): CLI {
-  const { spec } = options
+  const spec = options.filters
+    ? { ...options.spec, operations: filterOperations(options.spec.operations, options.filters) }
+    : options.spec
   const name = options.name ?? 'dynamic-openapi-cli'
   const version = options.version ?? spec.version
   const description = options.description ?? spec.title

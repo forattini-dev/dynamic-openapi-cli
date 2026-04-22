@@ -14,7 +14,7 @@ Run `update` when the API evolves — the shim rewrites itself in place.
 [![Node.js](https://img.shields.io/badge/Node.js-18+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
 [![License](https://img.shields.io/npm/l/dynamic-openapi-cli.svg?style=flat-square&color=007AFF)](./LICENSE)
 
-[30-second demo](#30-second-demo) · [Quick start](#quick-start) · [The family](#the-family) · [Bundle](#bundle--the-killer-feature) · [Self-update](#self-update) · [Install](#making-the-bundled-cli-globally-available) · [Auth](#authentication)
+[30-second demo](#30-second-demo) · [Quick start](#quick-start) · [The family](#the-family) · [Bundle](#bundle--the-killer-feature) · [Self-update](#self-update) · [Install](#making-the-bundled-cli-globally-available) · [Auth](#authentication) · [Filtering](#filtering-operations)
 
 </div>
 
@@ -463,6 +463,10 @@ Bootstrap flags (before the command):
       --server-index <n>        Pick the Nth server entry from the spec (default: 0)
       --name <string>           Display name in help (for bundled CLIs)
       --app-version <string>    Display version in help (for bundled CLIs)
+      --include-tag <name>      Only expose operations with this tag (repeatable, comma-separated)
+      --exclude-tag <name>      Hide operations with this tag (repeatable, comma-separated)
+      --include-operation <id>  Only expose these operationIds (repeatable, comma-separated)
+      --exclude-operation <id>  Hide these operationIds (repeatable, comma-separated)
       --self-version            Print dynamic-openapi-cli's own version
   -h, --help                    Show help (global or per-command)
 
@@ -487,6 +491,56 @@ Built-in subcommands (no spec required):
 | `OPENAPI_API_KEY` | Global API key |
 | `OPENAPI_AUTH_<SCHEME>_TOKEN` | Per-scheme bearer/basic token |
 | `OPENAPI_AUTH_<SCHEME>_KEY` | Per-scheme API key |
+
+---
+
+## Filtering operations
+
+Not every endpoint should show up as a subcommand. Two ways to trim:
+
+### Flags (and programmatic `filters`)
+
+```bash
+# read-only CLI: only the `pets` tag passes
+dynamic-openapi-cli -s ./spec.yaml --include-tag pets list-pets
+
+# hide admin commands
+dynamic-openapi-cli -s ./spec.yaml --exclude-tag admin
+
+# allowlist a specific set of operationIds
+dynamic-openapi-cli -s ./spec.yaml --include-operation listPets,getPetById
+
+# everything under `pets`, minus one destructive op
+dynamic-openapi-cli -s ./spec.yaml --include-tag pets --exclude-operation deletePet
+```
+
+Programmatic equivalent via `buildCli`:
+
+```typescript
+const cli = buildCli({
+  spec,
+  filters: {
+    tags: { include: ['pets'], exclude: ['admin'] },
+    operations: { include: ['healthCheck'], exclude: ['deletePet'] },
+  },
+})
+```
+
+**Precedence** (first match wins): `x-hidden` → `operations.exclude` → `operations.include` → `tags.exclude` → includes as allowlist. `operations.include` escapes a matching `tags.exclude`, but `operations.exclude` wins over everything except `x-hidden`.
+
+### `x-hidden` vendor extension
+
+Hide an endpoint at the spec level — no flags required, applies to every consumer:
+
+```yaml
+paths:
+  /admin/reset:
+    post:
+      operationId: adminReset
+      x-hidden: true        # always removed, no matter what filter flags say
+```
+
+Use it for endpoints that appear in the public spec but should never become CLI subcommands, MCP tools, or skill operations.
 
 ---
 

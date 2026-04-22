@@ -1,5 +1,7 @@
 export { loadSpec, resolveSource } from './parser/loader.js'
 export { resolveSpec } from './parser/resolver.js'
+export { filterOperations } from './parser/filter.js'
+export type { OperationFilter, OperationFilters } from './parser/filter.js'
 export type {
   ParsedSpec,
   ParsedOperation,
