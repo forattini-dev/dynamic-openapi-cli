@@ -1,0 +1,73 @@
+openapi: 3.0.3
+info:
+  title: Petstore Mini
+  version: 1.0.0
+  description: Tiny petstore for tests
+servers:
+  - url: https://example.test/api/v3
+paths:
+  /pets:
+    get:
+      operationId: listPets
+      summary: List all pets
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [available, pending, sold]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Pet'
+    post:
+      operationId: createPet
+      summary: Create a pet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Pet'
+      responses:
+        '201':
+          description: Created
+  /pets/{petId}:
+    get:
+      operationId: getPetById
+      summary: Get pet by id
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+components:
+  schemas:
+    Pet:
+      type: object
+      required: [name]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        tag:
+          type: string
