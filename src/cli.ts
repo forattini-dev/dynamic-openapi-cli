@@ -1,3 +1,4 @@
+import { pathToFileURL } from 'node:url'
 import { loadSpec } from './parser/loader.js'
 import { resolveSpec } from './parser/resolver.js'
 import type { OperationFilters } from './parser/filter.js'
@@ -45,8 +46,8 @@ Examples:
   dynamic-openapi-cli bundle -s ./spec.yaml --name petstore-cli --out ./petstore-cli
 `
 
-async function main(): Promise<void> {
-  const argv = process.argv.slice(2)
+export async function main(processArgv: string[] = process.argv): Promise<void> {
+  const argv = processArgv.slice(2)
 
   if (argv[0] === 'bundle') {
     await runBundle(argv.slice(1))
@@ -90,7 +91,7 @@ async function main(): Promise<void> {
   }
 }
 
-function buildFilters(args: BootstrapArgs): OperationFilters | undefined {
+export function buildFilters(args: BootstrapArgs): OperationFilters | undefined {
   const filters: OperationFilters = {}
   if (args.includeTags.length > 0 || args.excludeTags.length > 0) {
     filters.tags = {}
@@ -105,4 +106,12 @@ function buildFilters(args: BootstrapArgs): OperationFilters | undefined {
   return filters.tags || filters.operations ? filters : undefined
 }
 
-main()
+const invokedDirectly =
+  typeof process !== 'undefined' &&
+  Array.isArray(process.argv) &&
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+
+if (invokedDirectly) {
+  main()
+}

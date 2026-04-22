@@ -36,6 +36,7 @@ describe('resolveSpec', () => {
       paths: {
         '/pets/{id}': {
           get: {
+            parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
             responses: { '200': { description: 'ok' } },
             tags: ['pets'],
           },

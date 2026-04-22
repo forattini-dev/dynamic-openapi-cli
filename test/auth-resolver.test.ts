@@ -20,7 +20,7 @@ describe('resolveAuth', () => {
     delete process.env['OPENAPI_AUTH_TOKEN']
     delete process.env['OPENAPI_API_KEY']
     delete process.env['OPENAPI_AUTH_BEARER_TOKEN']
-    delete process.env['OPENAPI_AUTH_API_KEY']
+    delete process.env['OPENAPI_AUTH_APIKEY_KEY']
   })
 
   afterEach(() => {
@@ -81,7 +81,7 @@ describe('resolveAuth', () => {
   })
 
   it('reads per-scheme key from env: OPENAPI_AUTH_<NAME>_KEY', () => {
-    process.env['OPENAPI_AUTH_API_KEY'] = 'env-key'
+    process.env['OPENAPI_AUTH_APIKEY_KEY'] = 'env-key'
     const auth = resolveAuth(undefined, { apiKey: APIKEY_SCHEME })!
     expect(auth).toBeInstanceOf(ApiKeyAuth)
   })
