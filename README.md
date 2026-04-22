@@ -14,7 +14,7 @@ Run `update` when the API evolves — the shim rewrites itself in place.
 [![Node.js](https://img.shields.io/badge/Node.js-18+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
 [![License](https://img.shields.io/npm/l/dynamic-openapi-cli.svg?style=flat-square&color=007AFF)](./LICENSE)
 
-[30-second demo](#30-second-demo) · [Quick start](#quick-start) · [Bundle](#bundle--the-killer-feature) · [Self-update](#self-update) · [Install](#making-the-bundled-cli-globally-available) · [Auth](#authentication)
+[30-second demo](#30-second-demo) · [Quick start](#quick-start) · [The family](#the-family) · [Bundle](#bundle--the-killer-feature) · [Self-update](#self-update) · [Install](#making-the-bundled-cli-globally-available) · [Auth](#authentication)
 
 </div>
 
@@ -578,9 +578,21 @@ Requires **Node.js 18+**. TypeScript types are shipped.
 
 ---
 
-## Comparison with `dynamic-openapi-mcp`
+## The family
 
-[`dynamic-openapi-mcp`](https://github.com/forattini-dev/dynamic-openapi-mcp) is the sibling project. Same parser, same auth, different consumer:
+Three complementary projects, one spec, three output surfaces — pick the one that fits the use case:
+
+| Sibling | Output | Runs when | Best when |
+|:--------|:-------|:----------|:----------|
+| [`dynamic-openapi-mcp`](https://github.com/forattini-dev/dynamic-openapi-mcp) | Live MCP server (stdio) | Every tool call spins the server | You want real-time introspection, auto-refreshed OAuth tokens, typed tool I/O |
+| [`dynamic-openapi-cli`](#) | **Bash CLI (optionally bundled)** | Humans and scripts invoke it | You want a commit-friendly shim humans and CI can run |
+| [`dynamic-openapi-skill`](https://github.com/forattini-dev/dynamic-openapi-skill) | Static `SKILL.md` | Claude loads it on demand | You want zero runtime, diff-friendly docs, and model-driven calls via `curl` / `fetch` |
+
+> All three share the same parser and auth layer. Switching between them is a matter of pointing them at the same spec.
+
+### Head-to-head with the MCP sibling
+
+Same parser, same auth, different consumer:
 
 | | **dynamic-openapi-mcp** | **dynamic-openapi-cli** |
 |:-|:------------------------|:------------------------|
@@ -592,7 +604,7 @@ Requires **Node.js 18+**. TypeScript types are shipped.
 | Bundle | — | Single-file bash shim |
 | Self-update | — | `update` subcommand in the shim |
 
-Pick the MCP version when you want AI agents to call your API. Pick the CLI version when you want humans, scripts, or CI jobs to call it.
+Pick the MCP version when you want AI agents to call your API. Pick the CLI version when you want humans, scripts, or CI jobs to call it. Pick the [skill version](https://github.com/forattini-dev/dynamic-openapi-skill) when you want Claude to learn the API from a static markdown file — zero runtime required.
 
 ---
 
