@@ -51,7 +51,7 @@ bundled "petstore" v1.0.0 → ./petstore (7.3 KB, 18 operations)
 
 # 4. install it globally
 $ ./petstore install
-petstore install: symlinked /home/ff/.local/bin/petstore → /home/ff/work/petstore
+petstore install: symlinked ~/.local/bin/petstore → ./petstore
 
 # 5. use it anywhere
 $ petstore list-pets --status=available --limit=5
@@ -330,8 +330,8 @@ bb864f7025e1408ccdc00f11f5c0e8bb
 
 $ petstore update
 petstore update: fetching https://petstore3.swagger.io/api/v3/openapi.json ...
-bundled "petstore" v1.1.0 → /home/ff/tmp/petstore.update.12345 (7.4 KB, 19 operations)
-petstore update: spec changed (md5 bb864f70 → a12c9e31), /home/ff/bin/petstore 1.0.0 → 1.1.0.
+bundled "petstore" v1.1.0 → /tmp/petstore.update.12345 (7.4 KB, 19 operations)
+petstore update: spec changed (md5 bb864f70 → a12c9e31), ./petstore 1.0.0 → 1.1.0.
 
 $ petstore --help                     # petstore 1.1.0 — new operation visible
 ```
@@ -372,10 +372,10 @@ Three options, from "one command" to "npm ecosystem":
 Defaults to `$XDG_BIN_HOME` or `$HOME/.local/bin` — **no sudo needed.** If the target directory isn't on your `PATH`, the command prints the exact line to add to your shell rc:
 
 ```
-petstore install: warning — /home/ff/.local/bin is not on your PATH yet.
+petstore install: warning — ~/.local/bin is not on your PATH yet.
        Add this line to your shell rc (~/.bashrc, ~/.zshrc, or equivalent):
 
-         export PATH="/home/ff/.local/bin:$PATH"
+         export PATH="$HOME/.local/bin:$PATH"
 ```
 
 **Why symlink by default:** running `update` in the original location transparently refreshes the globally-linked binary. Copy mode (`--copy`) is useful when you want the installed version frozen against further updates.
