@@ -53,26 +53,28 @@ describe('token cache', () => {
   })
 
   it('derives the cache dir from XDG_DATA_HOME', () => {
-    expect(tokenCacheDir()).toBe(join(tmp, 'dynamic-openapi-cli', 'tokens'))
+    expect(tokenCacheDir()).toBe(join(tmp, 'dynamic-openapi-cli'))
   })
 
-  it('sanitizes cache keys so they cannot escape the tokens dir', async () => {
+  it('sanitizes the app name so it cannot escape the cache dir', async () => {
     const full = tokenCachePath('../../evil/../key')
     const { basename, dirname } = await import('node:path')
     expect(dirname(full)).toBe(tokenCacheDir())
     expect(basename(full).includes('/')).toBe(false)
     expect(basename(full).includes('\\')).toBe(false)
+    expect(basename(full).endsWith('.env')).toBe(true)
   })
 
   it('round-trips a token via write/read/delete', async () => {
-    await writeTokenCache('k', {
+    const key = { appName: 'myapp', schemeName: 'oauth' }
+    await writeTokenCache(key, {
       access_token: 'at',
       refresh_token: 'rt',
       token_type: 'Bearer',
       expires_at: 123,
       scopes: ['a', 'b'],
     })
-    const read = await readTokenCache('k')
+    const read = await readTokenCache(key)
     expect(read).toEqual({
       access_token: 'at',
       refresh_token: 'rt',
@@ -80,20 +82,52 @@ describe('token cache', () => {
       expires_at: 123,
       scopes: ['a', 'b'],
     })
-    await deleteTokenCache('k')
-    expect(await readTokenCache('k')).toBeNull()
+    await deleteTokenCache(key)
+    expect(await readTokenCache(key)).toBeNull()
   })
 
-  it('returns null for a malformed cache file', async () => {
-    await writeTokenCache('broken', {
-      access_token: 'at',
+  it('keeps multiple schemes in the same app file isolated', async () => {
+    const a = { appName: 'shared', schemeName: 'oauth_a' }
+    const b = { appName: 'shared', schemeName: 'oauth_b' }
+    await writeTokenCache(a, {
+      access_token: 'at-a',
+      token_type: 'Bearer',
+      expires_at: 10,
+      scopes: [],
+    })
+    await writeTokenCache(b, {
+      access_token: 'at-b',
+      token_type: 'Bearer',
+      expires_at: 20,
+      scopes: ['x'],
+    })
+    expect((await readTokenCache(a))?.access_token).toBe('at-a')
+    expect((await readTokenCache(b))?.access_token).toBe('at-b')
+    await deleteTokenCache(a)
+    expect(await readTokenCache(a)).toBeNull()
+    expect((await readTokenCache(b))?.access_token).toBe('at-b')
+  })
+
+  it('stores the cache as an AES-GCM blob that cannot be read as plaintext', async () => {
+    const key = { appName: 'opaque', schemeName: 'oauth' }
+    await writeTokenCache(key, {
+      access_token: 'super-secret-token',
       token_type: 'Bearer',
       expires_at: 1,
       scopes: [],
     })
+    const { readFile } = await import('node:fs/promises')
+    const raw = await readFile(tokenCachePath('opaque'))
+    expect(raw.toString('utf-8')).not.toContain('super-secret-token')
+    expect(raw.toString('utf-8')).not.toContain('ACCESS_TOKEN')
+  })
+
+  it('returns null when the file is corrupted or has the wrong password', async () => {
     const { writeFile } = await import('node:fs/promises')
-    await writeFile(tokenCachePath('broken'), '{not json}')
-    expect(await readTokenCache('broken')).toBeNull()
+    const { mkdir } = await import('node:fs/promises')
+    await mkdir(tokenCacheDir(), { recursive: true })
+    await writeFile(tokenCachePath('broken'), Buffer.from('not a valid encrypted blob'))
+    expect(await readTokenCache({ appName: 'broken', schemeName: 'oauth' })).toBeNull()
   })
 })
 
@@ -137,6 +171,19 @@ describe('detectOAuth2AuthCode', () => {
     expect(detected?.config.clientId).toBe('scoped')
     expect(detected?.config.scopes).toEqual(['read:pets'])
     expect(detected?.config.redirectPort).toBe(9999)
+  })
+
+  it('defaults appName to "global" and accepts an override', () => {
+    const detected = detectOAuth2AuthCode(schemes(), {
+      env: { OPENAPI_OAUTH2_CLIENT_ID: 'x' },
+    })
+    expect(detected?.config.appName).toBe('global')
+
+    const detectedWithApp = detectOAuth2AuthCode(schemes(), {
+      appName: 'my-pet-store',
+      env: { OPENAPI_OAUTH2_CLIENT_ID: 'x' },
+    })
+    expect(detectedWithApp?.config.appName).toBe('my-pet-store')
   })
 
   it('ignores schemes that do not declare an authorizationCode flow', () => {
@@ -204,35 +251,17 @@ describe('OAuth2AuthCodeFlow token lifecycle', () => {
 
   it('applies a cached token without hitting the network', async () => {
     const auth = createOAuth2AuthCodeAuth({
+      appName: 'global',
       schemeName: 'test',
       clientId: 'c',
       authorizationUrl: 'https://a.test/auth',
       tokenUrl: 'https://a.test/token',
       scopes: ['read'],
     })
-    // Seed the cache directly.
     const flow = auth as OAuth2AuthCodeFlow
-    // The flow computes its cache key internally; easiest path is to prime it by
-    // wiring a stub for fetch and calling apply(), which in turn reads cache.
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
 
-    // Access the private cacheKey via the flow's logout() round-trip.
-    // Simpler: write a valid token whose cache file we derive via a second call.
-    // Since deriveCacheKey is stable, invoke forceLogin? No — instead test the
-    // "fresh cache" path by pre-populating via writeTokenCache with the same
-    // derivation formula. We expose tokenCachePath but not the key; mock instead.
-    // Reliable approach: mock readTokenCache by writing through the public
-    // writeTokenCache with the exact cache key derivation — replicate it here.
-    const { createHash } = await import('node:crypto')
-    const hash = createHash('sha256')
-      .update('c')
-      .update('|')
-      .update('https://a.test/token')
-      .update('|')
-      .update(['read'].sort().join(' '))
-      .digest('hex')
-      .slice(0, 16)
-    await writeTokenCache(`test-${hash}`, {
+    await writeTokenCache({ appName: 'global', schemeName: 'test' }, {
       access_token: 'cached-at',
       token_type: 'Bearer',
       expires_at: Date.now() + 60_000,
@@ -247,6 +276,7 @@ describe('OAuth2AuthCodeFlow token lifecycle', () => {
 
   it('refreshes via refresh_token when the cached token is expired', async () => {
     const auth = createOAuth2AuthCodeAuth({
+      appName: 'global',
       schemeName: 'test',
       clientId: 'c',
       authorizationUrl: 'https://a.test/auth',
@@ -255,16 +285,8 @@ describe('OAuth2AuthCodeFlow token lifecycle', () => {
       refreshBufferSeconds: 0,
     })
     const flow = auth as OAuth2AuthCodeFlow
-    const { createHash } = await import('node:crypto')
-    const hash = createHash('sha256')
-      .update('c')
-      .update('|')
-      .update('https://a.test/token')
-      .update('|')
-      .update('read')
-      .digest('hex')
-      .slice(0, 16)
-    await writeTokenCache(`test-${hash}`, {
+
+    await writeTokenCache({ appName: 'global', schemeName: 'test' }, {
       access_token: 'old-at',
       refresh_token: 'rt-1',
       token_type: 'Bearer',

@@ -33,7 +33,11 @@ function pickOpener(): { command: string; args: string[] } | null {
     case 'darwin':
       return { command: 'open', args: [] }
     case 'win32':
-      return { command: 'cmd', args: ['/c', 'start', '""'] }
+      // rundll32 url.dll,FileProtocolHandler is the canonical Windows "open URL
+      // in default browser" primitive. Unlike `cmd /c start`, it doesn't go
+      // through a shell so ampersands in OAuth2 URLs (scope, state, …) stay
+      // intact.
+      return { command: 'rundll32', args: ['url.dll,FileProtocolHandler'] }
     default:
       return { command: 'xdg-open', args: [] }
   }

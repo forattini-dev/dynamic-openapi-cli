@@ -2,9 +2,21 @@ import type { OpenAPIV3 } from 'dynamic-openapi-tools/parser'
 import type { ResolvedAuth } from 'dynamic-openapi-tools/auth'
 import { OAuth2AuthCodeFlow, type OAuth2AuthCodeConfig } from './oauth2-auth-code.js'
 
+export const DEFAULT_APP_NAME = 'global'
+
 export interface DetectedOAuth2AuthCode {
   schemeName: string
   config: OAuth2AuthCodeConfig
+}
+
+export interface DetectOptions {
+  /**
+   * Cache file name for the resolved token. Pass the bundle's --name here;
+   * defaults to DEFAULT_APP_NAME (`global`) for the raw dynamic CLI.
+   */
+  appName?: string
+  /** Override process.env (testing). */
+  env?: NodeJS.ProcessEnv
 }
 
 /**
@@ -14,8 +26,11 @@ export interface DetectedOAuth2AuthCode {
  */
 export function detectOAuth2AuthCode(
   securitySchemes: Record<string, OpenAPIV3.SecuritySchemeObject>,
-  env: NodeJS.ProcessEnv = process.env
+  options: DetectOptions | NodeJS.ProcessEnv = {}
 ): DetectedOAuth2AuthCode | null {
+  const normalized = normalizeOptions(options)
+  const env = normalized.env ?? process.env
+  const appName = normalized.appName ?? DEFAULT_APP_NAME
   for (const [name, scheme] of Object.entries(securitySchemes)) {
     if (!scheme || scheme.type !== 'oauth2') continue
     const flow = (scheme as OpenAPIV3.OAuth2SecurityScheme).flows?.authorizationCode
@@ -38,6 +53,7 @@ export function detectOAuth2AuthCode(
       : Object.keys(flow.scopes ?? {})
 
     const config: OAuth2AuthCodeConfig = {
+      appName,
       schemeName: name,
       clientId,
       authorizationUrl: flow.authorizationUrl,
@@ -63,4 +79,15 @@ export function createOAuth2AuthCodeAuth(config: OAuth2AuthCodeConfig): Resolved
 
 function envKeyFor(schemeName: string): string {
   return schemeName.toUpperCase().replace(/[^A-Z0-9]+/g, '_')
+}
+
+function normalizeOptions(options: DetectOptions | NodeJS.ProcessEnv): DetectOptions {
+  if (!options) return {}
+  // Heuristic: a DetectOptions has at most two known keys; anything else is a
+  // raw env map (legacy test signature).
+  const keys = Object.keys(options)
+  if (keys.length === 0) return {}
+  const looksLikeOptions = keys.every((k) => k === 'appName' || k === 'env')
+  if (looksLikeOptions) return options as DetectOptions
+  return { env: options as NodeJS.ProcessEnv }
 }

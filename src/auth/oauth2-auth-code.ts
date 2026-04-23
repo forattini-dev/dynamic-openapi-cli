@@ -1,12 +1,22 @@
-import { createHash } from 'node:crypto'
 import type { ResolvedAuth } from 'dynamic-openapi-tools/auth'
 import { openBrowser } from './browser.js'
 import { captureCallback } from './loopback-server.js'
 import { generatePkce, generateState } from './pkce.js'
-import { readTokenCache, writeTokenCache, deleteTokenCache, type CachedToken } from './token-cache.js'
+import {
+  readTokenCache,
+  writeTokenCache,
+  deleteTokenCache,
+  type CachedToken,
+  type TokenCacheKey,
+} from './token-cache.js'
 
 export interface OAuth2AuthCodeConfig {
-  /** Scheme name from the spec (used for user-facing messages and cache key). */
+  /**
+   * Application name — used as the token cache file name and the encryption
+   * password. "global" for the raw dynamic CLI; the bundle's --name otherwise.
+   */
+  appName: string
+  /** Scheme name from the spec (used for user-facing messages and cache section). */
   schemeName: string
   clientId: string
   /** Optional for public clients (when the authorization server accepts PKCE alone). */
@@ -42,13 +52,13 @@ const DEFAULT_REFRESH_BUFFER_SECONDS = 30
  */
 export class OAuth2AuthCodeFlow implements ResolvedAuth {
   private config: OAuth2AuthCodeConfig
-  private cacheKey: string
+  private cacheKey: TokenCacheKey
   private cached?: CachedToken
   private pendingTokenRequest?: Promise<string>
 
   constructor(config: OAuth2AuthCodeConfig) {
     this.config = config
-    this.cacheKey = deriveCacheKey(config)
+    this.cacheKey = { appName: config.appName, schemeName: config.schemeName }
   }
 
   async apply(_url: URL, init: RequestInit): Promise<RequestInit> {
@@ -236,18 +246,6 @@ function toCachedToken(response: TokenEndpointResponse, fallbackScopes: string[]
   }
   if (response.refresh_token) token.refresh_token = response.refresh_token
   return token
-}
-
-function deriveCacheKey(config: OAuth2AuthCodeConfig): string {
-  const hash = createHash('sha256')
-    .update(config.clientId)
-    .update('|')
-    .update(config.tokenUrl)
-    .update('|')
-    .update([...config.scopes].sort().join(' '))
-    .digest('hex')
-    .slice(0, 16)
-  return `${config.schemeName}-${hash}`
 }
 
 function describeError(error: unknown): string {

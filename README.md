@@ -501,7 +501,9 @@ petstore create-pet --body-file=new-pet.json
 
 ### OAuth2 authorization code (browser login)
 
-When the spec declares an OAuth2 `authorizationCode` flow and `OPENAPI_OAUTH2_CLIENT_ID` is present, the CLI triggers a browser-based login on the first request — PKCE + loopback server on `127.0.0.1:7999` — and caches the token under `$XDG_DATA_HOME/dynamic-openapi-cli/tokens/`. Subsequent calls reuse the cached token and refresh it transparently when it expires.
+When the spec declares an OAuth2 `authorizationCode` flow and `OPENAPI_OAUTH2_CLIENT_ID` is present, the CLI triggers a browser-based login on the first request — PKCE + loopback server on `127.0.0.1:7999` — and caches the token under `$XDG_DATA_HOME/dynamic-openapi-cli/<app>.env`. Subsequent calls reuse the cached token and refresh it transparently when it expires.
+
+The cache file is one per application: the raw dynamic CLI writes to `global.env`, a bundle's `--name my-pet-store` writes to `my-pet-store.env`. Contents are AES-256-GCM encrypted with a key derived from the application name — **symbolic at-rest protection**: it stops `cat`, grep, and backup indexers from seeing plaintext tokens, but anyone with the source and the filename can decrypt it. Real protection relies on the `0600` file mode and your filesystem permissions.
 
 ```bash
 export OPENAPI_OAUTH2_CLIENT_ID=cli-public

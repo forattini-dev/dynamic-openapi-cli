@@ -71,7 +71,7 @@ export function buildCli(options: BuildCliOptions): CLI {
   const description = options.description ?? spec.title
 
   const baseUrl = resolveBaseUrl(spec, options.baseUrl, options.serverIndex)
-  const auth = resolveAuthWithOAuth2(spec, options.authConfig)
+  const auth = resolveAuthWithOAuth2(spec, options.authConfig, options.name)
 
   const httpConfig: HttpClientConfig = {
     baseUrl,
@@ -223,10 +223,14 @@ async function mergeArgs(
  * custom) — if nothing matched, fall back to OAuth2 authorization-code when
  * the spec declares such a flow and env vars provide a client id.
  */
-function resolveAuthWithOAuth2(spec: ParsedSpec, authConfig: AuthConfig | undefined): ResolvedAuth | null {
+function resolveAuthWithOAuth2(
+  spec: ParsedSpec,
+  authConfig: AuthConfig | undefined,
+  appName: string | undefined
+): ResolvedAuth | null {
   const resolved = resolveAuth(authConfig, spec.securitySchemes)
   if (resolved) return resolved
-  const detected = detectOAuth2AuthCode(spec.securitySchemes)
+  const detected = detectOAuth2AuthCode(spec.securitySchemes, { appName })
   if (detected) return createOAuth2AuthCodeAuth(detected.config)
   return null
 }

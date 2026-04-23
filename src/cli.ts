@@ -97,11 +97,11 @@ export async function main(processArgv: string[] = process.argv): Promise<void> 
     const spec = await resolveSpec(doc)
 
     if (bootstrap.rest[0] === 'login') {
-      await runLogin(spec.securitySchemes)
+      await runLogin(spec.securitySchemes, bootstrap.name)
       return
     }
     if (bootstrap.rest[0] === 'logout') {
-      await runLogout(spec.securitySchemes)
+      await runLogout(spec.securitySchemes, bootstrap.name)
       return
     }
 
@@ -131,9 +131,10 @@ export async function main(processArgv: string[] = process.argv): Promise<void> 
 }
 
 async function runLogin(
-  securitySchemes: Parameters<typeof detectOAuth2AuthCode>[0]
+  securitySchemes: Parameters<typeof detectOAuth2AuthCode>[0],
+  appName: string | undefined
 ): Promise<void> {
-  const detected = detectOAuth2AuthCode(securitySchemes)
+  const detected = detectOAuth2AuthCode(securitySchemes, { appName })
   if (!detected) {
     process.stderr.write(
       'login: no OAuth2 authorization-code flow is configured. Set OPENAPI_OAUTH2_CLIENT_ID (and OPENAPI_OAUTH2_SCOPES if needed) and ensure the spec declares an authorizationCode flow.\n'
@@ -143,21 +144,22 @@ async function runLogin(
   const auth = createOAuth2AuthCodeAuth(detected.config) as OAuth2AuthCodeFlow
   const token = await auth.forceLogin()
   process.stderr.write(
-    `login: cached token for scheme "${detected.schemeName}" (expires at ${new Date(token.expires_at).toISOString()})\n`
+    `login: cached token for scheme "${detected.schemeName}" in "${detected.config.appName}.env" (expires at ${new Date(token.expires_at).toISOString()})\n`
   )
 }
 
 async function runLogout(
-  securitySchemes: Parameters<typeof detectOAuth2AuthCode>[0]
+  securitySchemes: Parameters<typeof detectOAuth2AuthCode>[0],
+  appName: string | undefined
 ): Promise<void> {
-  const detected = detectOAuth2AuthCode(securitySchemes)
+  const detected = detectOAuth2AuthCode(securitySchemes, { appName })
   if (!detected) {
     process.stderr.write('logout: no OAuth2 authorization-code flow is configured; nothing to remove.\n')
     return
   }
   const auth = createOAuth2AuthCodeAuth(detected.config) as OAuth2AuthCodeFlow
   await auth.logout()
-  process.stderr.write(`logout: removed cached token for scheme "${detected.schemeName}"\n`)
+  process.stderr.write(`logout: removed cached token for scheme "${detected.schemeName}" from "${detected.config.appName}.env"\n`)
 }
 
 /**
