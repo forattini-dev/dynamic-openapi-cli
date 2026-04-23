@@ -1,6 +1,6 @@
 {
   "name": "dynamic-openapi-cli",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Transform any OpenAPI v3 spec into a fully functional CLI",
   "type": "module",
   "main": "./dist/index.js",
