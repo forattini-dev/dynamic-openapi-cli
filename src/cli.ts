@@ -1,7 +1,5 @@
 import { pathToFileURL } from 'node:url'
-import { loadSpec } from './parser/loader.js'
-import { resolveSpec } from './parser/resolver.js'
-import type { OperationFilters } from './parser/filter.js'
+import { loadSpec, resolveSpec, type OperationFilters } from 'dynamic-openapi-tools/parser'
 import { buildCli, runCli } from './cli/app.js'
 import { preScan, type BootstrapArgs } from './cli/bootstrap.js'
 import { runBundle } from './cli/bundle.js'

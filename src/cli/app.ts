@@ -1,11 +1,9 @@
 import { readFile } from 'node:fs/promises'
 import { createCLI, formatErrors, type CLI, type PrimitiveValue } from 'cli-args-parser'
-import type { AuthConfig } from '../auth/types.js'
-import { resolveAuth } from '../auth/resolver.js'
+import { resolveAuth, type AuthConfig } from 'dynamic-openapi-tools/auth'
+import { filterOperations, type OperationFilters, type ParsedSpec } from 'dynamic-openapi-tools/parser'
+import type { FetchWithRetryOptions } from 'dynamic-openapi-tools/utils'
 import { executeOperation, RequestError, ValidationError, resolveBaseUrl, type HttpClientConfig } from '../http/client.js'
-import type { ParsedSpec } from '../parser/types.js'
-import { filterOperations, type OperationFilters } from '../parser/filter.js'
-import type { FetchWithRetryOptions } from '../utils/fetch.js'
 import { buildCommandsFromSpec } from './command-builder.js'
 import { renderResponse, type OutputOptions } from './output.js'
 
@@ -157,7 +155,7 @@ export async function runCli(cli: CLI, argv: string[]): Promise<number> {
 }
 
 async function mergeArgs(
-  operation: import('../parser/types.js').ParsedOperation,
+  operation: import('dynamic-openapi-tools/parser').ParsedOperation,
   args: {
     positional: Record<string, PrimitiveValue | PrimitiveValue[]>
     options: Record<string, PrimitiveValue | PrimitiveValue[]>

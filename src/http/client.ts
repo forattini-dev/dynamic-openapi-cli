@@ -1,6 +1,6 @@
-import type { ResolvedAuth } from '../auth/types.js'
-import type { ParsedOperation, ParsedRequestBody, ParsedServer, ParsedSpec } from '../parser/types.js'
-import { fetchWithRetry, type FetchWithRetryOptions } from '../utils/fetch.js'
+import type { ResolvedAuth } from 'dynamic-openapi-tools/auth'
+import type { ParsedOperation, ParsedRequestBody, ParsedServer, ParsedSpec } from 'dynamic-openapi-tools/parser'
+import { fetchWithRetry, type FetchWithRetryOptions } from 'dynamic-openapi-tools/utils'
 
 export interface HttpClientConfig {
   baseUrl: string

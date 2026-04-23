@@ -1,8 +1,15 @@
-export { loadSpec, resolveSource } from './parser/loader.js'
-export { resolveSpec } from './parser/resolver.js'
-export { filterOperations } from './parser/filter.js'
-export type { OperationFilter, OperationFilters } from './parser/filter.js'
+// Re-export the shared building blocks from dynamic-openapi-tools so downstream
+// consumers of dynamic-openapi-cli do not break after the modules moved out of
+// this package. Keep the surface identical to what src/index.ts used to export.
+export {
+  loadSpec,
+  resolveSource,
+  resolveSpec,
+  filterOperations,
+} from 'dynamic-openapi-tools/parser'
 export type {
+  OperationFilter,
+  OperationFilters,
   ParsedSpec,
   ParsedOperation,
   ParsedParameter,
@@ -12,9 +19,9 @@ export type {
   ParsedServerVariable,
   ParsedTag,
   ExternalDocs,
-} from './parser/types.js'
+} from 'dynamic-openapi-tools/parser'
 
-export { resolveAuth } from './auth/resolver.js'
+export { resolveAuth } from 'dynamic-openapi-tools/auth'
 export type {
   AuthConfig,
   ResolvedAuth,
@@ -22,7 +29,10 @@ export type {
   TokenExchangeRequestConfig,
   TokenExchangeResponseConfig,
   TokenExchangeApplyConfig,
-} from './auth/types.js'
+} from 'dynamic-openapi-tools/auth'
+
+export { fetchWithRetry } from 'dynamic-openapi-tools/utils'
+export type { FetchWithRetryOptions, RetryPolicy } from 'dynamic-openapi-tools/utils'
 
 export {
   executeOperation,
@@ -32,9 +42,6 @@ export {
   ValidationError,
 } from './http/client.js'
 export type { HttpClientConfig, ExecutedRequest } from './http/client.js'
-
-export { fetchWithRetry } from './utils/fetch.js'
-export type { FetchWithRetryOptions, RetryPolicy } from './utils/fetch.js'
 
 export { buildCommandsFromSpec } from './cli/command-builder.js'
 export { buildBundle } from './cli/bundle.js'

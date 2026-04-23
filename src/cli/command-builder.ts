@@ -1,7 +1,7 @@
 import type { CommandDefinition, OptionDefinition, OptionType, PositionalDefinition, PrimitiveValue } from 'cli-args-parser'
 import type { OpenAPIV3 } from 'openapi-types'
-import type { ParsedOperation, ParsedParameter, ParsedSpec } from '../parser/types.js'
-import { sanitizeToolName, truncateDescription } from '../utils/naming.js'
+import type { ParsedOperation, ParsedParameter, ParsedSpec } from 'dynamic-openapi-tools/parser'
+import { sanitizeToolName, truncateDescription } from 'dynamic-openapi-tools/utils'
 
 export interface CommandContext {
   operation: ParsedOperation

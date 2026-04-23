@@ -9,7 +9,7 @@ import {
   isBinaryContentType,
   getMimeType,
 } from '../src/http/client.js'
-import type { ParsedOperation, ParsedSpec } from '../src/parser/types.js'
+import type { ParsedOperation, ParsedSpec } from 'dynamic-openapi-tools/parser'
 
 function baseOp(overrides: Partial<ParsedOperation> = {}): ParsedOperation {
   return {

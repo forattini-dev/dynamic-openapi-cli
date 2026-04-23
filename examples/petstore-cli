@@ -3,6 +3,7 @@
 # Generator:   dynamic-openapi-cli
 # CLI name:    petstore-cli
 # Version:     1.0.0
+# Description: Petstore Mini
 # Spec source: test/fixtures/petstore-mini.yaml
 # Spec MD5:    bb864f7025e1408ccdc00f11f5c0e8bb
 # Spec:        embedded as base64-encoded JSON (dereferenced OpenAPI v3)
@@ -76,7 +77,7 @@ if [[ "${1:-}" == "install" ]]; then
       -h|--help)
         printf 'Usage: %s install [--dir <path>] [--copy] [--force]\n' "$CLI_NAME"
         printf '\n'
-        printf 'Installs this CLI into a directory on your PATH.\n'
+        printf 'Installs this binary into a directory on your PATH.\n'
         printf '\n'
         printf 'Options:\n'
         printf '  --dir <path>   Target directory (default: \$XDG_BIN_HOME or \$HOME/.local/bin)\n'
@@ -125,7 +126,7 @@ if [[ "${1:-}" == "install" ]]; then
     printf >&2 '\n'
     printf >&2 '       Then run:  exec $SHELL   (or open a new terminal)\n'
   else
-    printf >&2 '       Run:  %s --help\n' "$CLI_NAME"
+    printf >&2 '       Run:  %s --help\n' "$LINK"
   fi
   exit 0
 fi
@@ -162,12 +163,12 @@ if [[ "${1:-}" == "uninstall" ]]; then
     if [[ -L "$LINK" ]]; then
       RESOLVED="$(readlink "$LINK" 2>/dev/null || true)"
       if [[ "$RESOLVED" != "$SELF" ]]; then
-        printf >&2 '%s uninstall: %s is a symlink to %s, not to this CLI. Pass --force to remove anyway.\n' \
+        printf >&2 '%s uninstall: %s is a symlink to %s, not to this binary. Pass --force to remove anyway.\n' \
           "$CLI_NAME" "$LINK" "$RESOLVED"
         exit 1
       fi
     elif ! cmp -s "$LINK" "$SELF"; then
-      printf >&2 '%s uninstall: %s differs from this CLI. Pass --force to remove anyway.\n' "$CLI_NAME" "$LINK"
+      printf >&2 '%s uninstall: %s differs from this binary. Pass --force to remove anyway.\n' "$CLI_NAME" "$LINK"
       exit 1
     fi
   fi
@@ -187,10 +188,10 @@ if [[ "${1:-}" == "update" ]]; then
       -h|--help)
         printf 'Usage: %s update [--spec <url|file>] [--app-version <version>]\n' "$CLI_NAME"
         printf '\n'
-        printf 'Re-fetches the original spec and rewrites this CLI in-place.\n'
+        printf 'Re-fetches the original spec and rewrites this binary in-place.\n'
         printf '\n'
         printf 'By default, the new CLI_VERSION tracks the spec.info.version of the freshly\n'
-        printf 'fetched spec — the bundled version is a snapshot of the API, not of the CLI.\n'
+        printf 'fetched spec — the bundled version is a snapshot of the API, not of the binary.\n'
         printf '\n'
         printf 'Options:\n'
         printf '  --spec <url|file>        Use a different spec source (default: the one baked in at bundle time)\n'
@@ -233,7 +234,7 @@ if [[ "${1:-}" == "update" ]]; then
   UPDATE_SOURCE="${UPDATE_SPEC:-$SPEC_SOURCE}"
 
   if [[ -z "$UPDATE_SOURCE" ]]; then
-    printf >&2 '%s update: this CLI was bundled from an inline spec — no remote source to refresh.\n' "$CLI_NAME"
+    printf >&2 '%s update: this binary was bundled from an inline spec — no remote source to refresh.\n' "$CLI_NAME"
     printf >&2 '       Pass --spec <url|file> to update, or re-run "dynamic-openapi-cli bundle" manually.\n'
     exit 1
   fi
@@ -262,7 +263,7 @@ if [[ "${1:-}" == "update" ]]; then
         --name "$CLI_NAME" \
         "${VERSION_ARGS[@]}" \
         --out "$TMP"; then
-    printf >&2 '%s update: bundle failed, CLI not modified.\n' "$CLI_NAME"
+    printf >&2 '%s update: bundle failed, binary not modified.\n' "$CLI_NAME"
     exit 1
   fi
 
@@ -318,7 +319,7 @@ done
 if [[ -n "$SPEC_OVERRIDE" ]]; then
   SPEC_FILE="$SPEC_OVERRIDE"
 else
-  SPEC_FILE="$(mktemp -t "${CLI_NAME}.XXXXXX.json")"
+  SPEC_FILE="$(mktemp -t "$CLI_NAME.XXXXXX.json")"
   trap 'rm -f "$SPEC_FILE"' EXIT
   printf '%s' "$SPEC_B64" | base64 -d > "$SPEC_FILE"
 fi
@@ -327,7 +328,4 @@ RUNNER_STR="$(_resolve_runner)" || exit $?
 read -r -a RUNNER <<< "$RUNNER_STR"
 
 exec "${RUNNER[@]}" \
-  --spec "$SPEC_FILE" \
-  --name "$CLI_NAME" \
-  --app-version "$CLI_VERSION" \
-  "${PASSTHROUGH[@]}"
+  --spec "$SPEC_FILE" --name "$CLI_NAME" --app-version "$CLI_VERSION" "${PASSTHROUGH[@]}"

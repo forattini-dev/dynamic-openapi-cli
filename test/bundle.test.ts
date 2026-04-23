@@ -50,11 +50,13 @@ describe('buildBundle', () => {
     }
   })
 
-  it('records the absolute file path for local sources so update can re-fetch', async () => {
+  it('records the file path verbatim for local sources so update can re-fetch', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'bundle-test-'))
     try {
       const out = path.join(dir, 'local-cli')
-      const specPath = path.join(import.meta.dirname, 'fixtures', 'petstore-mini.yaml')
+      // Use a relative path on purpose — the renderer must preserve it verbatim
+      // so committed bundles do not leak absolute host paths.
+      const specPath = './test/fixtures/petstore-mini.yaml'
       await buildBundle({
         source: specPath,
         name: 'local-cli',
@@ -63,8 +65,7 @@ describe('buildBundle', () => {
 
       const content = await readFile(out, 'utf-8')
       expect(content).toMatch(/SPEC_SOURCE_KIND='file'/)
-      const expected = path.resolve(specPath)
-      expect(content).toContain(`SPEC_SOURCE='${expected}'`)
+      expect(content).toContain(`SPEC_SOURCE='${specPath}'`)
     } finally {
       await rm(dir, { recursive: true, force: true })
     }

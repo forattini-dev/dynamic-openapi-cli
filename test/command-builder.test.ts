@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { parse as parseYaml } from 'yaml'
-import { resolveSpec } from '../src/parser/resolver.js'
+import { resolveSpec } from 'dynamic-openapi-tools/parser'
 import { buildCommandsFromSpec } from '../src/cli/command-builder.js'
 import type { OpenAPIV3 } from 'openapi-types'
 

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { buildCommandsFromSpec } from '../src/cli/command-builder.js'
-import type { ParsedOperation, ParsedSpec } from '../src/parser/types.js'
+import type { ParsedOperation, ParsedSpec } from 'dynamic-openapi-tools/parser'
 
 function baseSpec(operations: ParsedOperation[]): ParsedSpec {
   return {
