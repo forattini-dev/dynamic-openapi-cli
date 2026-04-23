@@ -35,7 +35,7 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "dynamic-openapi-tools": "^1.1.1"
+    "dynamic-openapi-tools": "^1.1.4"
   },
   "devDependencies": {
     "@types/node": "^25.2.2",

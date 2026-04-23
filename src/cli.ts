@@ -1,7 +1,10 @@
 import { pathToFileURL } from 'node:url'
+import {
+  createOAuth2AuthCodeAuth,
+  detectOAuth2AuthCode,
+  OAuth2AuthCodeFlow,
+} from 'dynamic-openapi-tools/auth'
 import { loadSpec, resolveSpec, type OperationFilters } from 'dynamic-openapi-tools/parser'
-import { createOAuth2AuthCodeAuth, detectOAuth2AuthCode } from './auth/resolve.js'
-import { OAuth2AuthCodeFlow } from './auth/oauth2-auth-code.js'
 import { buildCli, runCli } from './cli/app.js'
 import { preScan, type BootstrapArgs } from './cli/bootstrap.js'
 import { runBundle } from './cli/bundle.js'

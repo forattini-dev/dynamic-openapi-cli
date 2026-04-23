@@ -1,9 +1,14 @@
 import { readFile } from 'node:fs/promises'
 import { createCLI, formatErrors, type CLI, type PrimitiveValue } from 'dynamic-openapi-tools/cli'
-import { resolveAuth, type AuthConfig, type ResolvedAuth } from 'dynamic-openapi-tools/auth'
+import {
+  resolveAuth,
+  createOAuth2AuthCodeAuth,
+  detectOAuth2AuthCode,
+  type AuthConfig,
+  type ResolvedAuth,
+} from 'dynamic-openapi-tools/auth'
 import { filterOperations, type OperationFilters, type ParsedSpec } from 'dynamic-openapi-tools/parser'
 import type { FetchWithRetryOptions } from 'dynamic-openapi-tools/utils'
-import { createOAuth2AuthCodeAuth, detectOAuth2AuthCode } from '../auth/resolve.js'
 import {
   executeOperation,
   prepareRequest,

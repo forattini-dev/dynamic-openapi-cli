@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       dynamic-openapi-tools:
-        specifier: ^1.1.1
-        version: 1.1.1
+        specifier: ^1.1.4
+        version: 1.1.4
     devDependencies:
       '@types/node':
         specifier: ^25.2.2
@@ -569,8 +569,8 @@ packages:
     resolution: {integrity: sha512-h5k/5U50IJJFpzfL6nO9jaaumfjO/f2NjK/oYB2Djzm4p9L+3T9qWpZqZ2hAbLPuuYq9wrU08WQyBTL5GbPk5Q==}
     engines: {node: '>=6'}
 
-  dynamic-openapi-tools@1.1.1:
-    resolution: {integrity: sha512-L2xElNkgh07+kSNhQwm+wmNH2/49LtL+8lIFHEuJN9l4PYjmQrGhQ0E9HoZ879BHWcwtyAUQev3uRVGSDCiOww==}
+  dynamic-openapi-tools@1.1.4:
+    resolution: {integrity: sha512-nZU1xL+wJIMfsvqb3gQfJ0gSsFlBXXXr6MxYzIL6ZecI05X6h2FQJy7e0a48W+hH/U5LyDFGcKENNk7/dGCaMQ==}
 
   eastasianwidth@0.2.0:
     resolution: {integrity: sha512-I88TYZWc9XiYHRQ4/3c5rjjfgkjhLyW2luGIheGERbNQ6OY7yTybanSpDXZa8y7VUP9YmDcYa+eyq4ca7iLqWA==}
@@ -1458,7 +1458,7 @@ snapshots:
 
   deep-eql@5.0.2: {}
 
-  dynamic-openapi-tools@1.1.1:
+  dynamic-openapi-tools@1.1.4:
     dependencies:
       '@readme/openapi-parser': 4.1.2(openapi-types@12.1.3)
       cli-args-parser: 1.0.6

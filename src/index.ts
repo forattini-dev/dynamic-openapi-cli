@@ -21,19 +21,21 @@ export type {
   ExternalDocs,
 } from 'dynamic-openapi-tools/parser'
 
-export { resolveAuth } from 'dynamic-openapi-tools/auth'
+export {
+  resolveAuth,
+  OAuth2AuthCodeFlow,
+  detectOAuth2AuthCode,
+  createOAuth2AuthCodeAuth,
+} from 'dynamic-openapi-tools/auth'
 export type {
   AuthConfig,
   ResolvedAuth,
+  OAuth2AuthCodeConfig,
   TokenExchangeAuthConfig,
   TokenExchangeRequestConfig,
   TokenExchangeResponseConfig,
   TokenExchangeApplyConfig,
 } from 'dynamic-openapi-tools/auth'
-
-export { OAuth2AuthCodeFlow } from './auth/oauth2-auth-code.js'
-export type { OAuth2AuthCodeConfig } from './auth/oauth2-auth-code.js'
-export { detectOAuth2AuthCode, createOAuth2AuthCodeAuth } from './auth/resolve.js'
 
 export { fetchWithRetry } from 'dynamic-openapi-tools/utils'
 export type { FetchWithRetryOptions, RetryPolicy } from 'dynamic-openapi-tools/utils'
