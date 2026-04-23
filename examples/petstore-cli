@@ -3,7 +3,7 @@
 # Generator:   dynamic-openapi-cli
 # CLI name:    petstore-cli
 # Version:     1.0.0
-# Spec source: /home/ff/work/FF/dynamic-openapi-cli/test/fixtures/petstore-mini.yaml
+# Spec source: test/fixtures/petstore-mini.yaml
 # Spec MD5:    bb864f7025e1408ccdc00f11f5c0e8bb
 # Spec:        embedded as base64-encoded JSON (dereferenced OpenAPI v3)
 set -euo pipefail
@@ -11,7 +11,7 @@ set -euo pipefail
 CLI_NAME='petstore-cli'
 CLI_VERSION='1.0.0'
 CLI_DESCRIPTION='Petstore Mini'
-SPEC_SOURCE='/home/ff/work/FF/dynamic-openapi-cli/test/fixtures/petstore-mini.yaml'
+SPEC_SOURCE='test/fixtures/petstore-mini.yaml'
 SPEC_SOURCE_KIND='file'
 SPEC_MD5='bb864f7025e1408ccdc00f11f5c0e8bb'
 
