@@ -102,6 +102,25 @@ describe('main (cli.ts entry point)', () => {
     }
   })
 
+  it('prints a bash completion script for the completion subcommand', async () => {
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as never)
+    await main(['node', 'cli', '-s', fixture, 'completion', 'bash'])
+    const out = stdout.mock.calls.map((c) => String(c[0])).join('')
+    expect(out).toContain('Bash completion for')
+    expect(out).toContain('list-pets')
+  })
+
+  it('exits 2 when completion is called with an unsupported shell', async () => {
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`)
+    }) as never)
+    vi.spyOn(process.stderr, 'write').mockImplementation((() => true) as never)
+    await expect(
+      main(['node', 'cli', '-s', fixture, 'completion', 'nushell'])
+    ).rejects.toThrow('exit:2')
+    exit.mockRestore()
+  })
+
   it('exits 1 when loadSpec throws', async () => {
     const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
       throw new Error(`exit:${code}`)

@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
 import type { ResolvedAuth } from 'dynamic-openapi-tools/auth'
 import type { ParsedOperation, ParsedRequestBody, ParsedServer, ParsedSpec } from 'dynamic-openapi-tools/parser'
 import { fetchWithRetry, type FetchWithRetryOptions } from 'dynamic-openapi-tools/utils'
@@ -13,6 +15,48 @@ export interface ExecutedRequest {
   response: Response
   url: string
   method: string
+}
+
+/**
+ * Semantic description of the resolved request body. Used both as input to
+ * `fetch` (via `body` on RequestInit) and as hints for downstream renderers
+ * like `--dry-run` curl output.
+ */
+export type PreparedBodyInfo =
+  | { kind: 'none' }
+  | { kind: 'json'; value: unknown; contentType: string }
+  | { kind: 'urlencoded'; pairs: Array<[string, string]>; contentType: string }
+  | { kind: 'multipart'; fields: MultipartField[]; contentType: string }
+  | {
+      kind: 'binary'
+      contentType: string
+      /** Original @path if the body came from a file reference. */
+      filePath?: string
+      /** Original filename (from @path or dataBase64 payload). */
+      filename?: string
+      bytes: number
+    }
+  | { kind: 'text'; value: string; contentType: string }
+
+export type MultipartField =
+  | { name: string; kind: 'value'; value: string }
+  | {
+      name: string
+      kind: 'file'
+      /** Original @path reference (for curl rendering). */
+      path?: string
+      filename: string
+      contentType: string
+      bytes: number
+    }
+
+export interface PreparedRequest {
+  url: URL
+  method: string
+  headers: Headers
+  body: RequestInit['body']
+  bodyInfo: PreparedBodyInfo
+  operation: ParsedOperation
 }
 
 export class RequestError extends Error {
@@ -64,26 +108,31 @@ export function resolveBaseUrl(spec: ParsedSpec, overrideBaseUrl?: string, serve
   throw new Error('No server URL found in spec and no baseUrl provided')
 }
 
-export async function executeOperation(
+/**
+ * Build the final URL, headers and body for a request — including auth — but
+ * do not fire it. This is what `--dry-run` renders and what `executeOperation`
+ * passes to `fetchWithRetry`.
+ */
+export async function prepareRequest(
   operation: ParsedOperation,
   args: Record<string, unknown>,
   config: HttpClientConfig
-): Promise<ExecutedRequest> {
+): Promise<PreparedRequest> {
   const validationErrors = validateRequiredParams(operation, args)
   if (validationErrors.length > 0) {
     throw new ValidationError(validationErrors)
   }
 
-  let path = operation.path
+  let urlPath = operation.path
 
   for (const param of operation.parameters) {
     if (param.in === 'path' && args[param.name] !== undefined) {
       const value = encodeURIComponent(String(args[param.name]))
-      path = path.replaceAll(`{${param.name}}`, value)
+      urlPath = urlPath.replaceAll(`{${param.name}}`, value)
     }
   }
 
-  const url = new URL(`${config.baseUrl}${path}`)
+  const url = new URL(`${config.baseUrl}${urlPath}`)
 
   for (const param of operation.parameters) {
     if (param.in === 'query' && args[param.name] !== undefined) {
@@ -110,9 +159,12 @@ export async function executeOperation(
   }
 
   let body: RequestInit['body']
+  let bodyInfo: PreparedBodyInfo = { kind: 'none' }
   if (args['body'] !== undefined && operation.requestBody) {
     const contentType = getRequestContentType(operation.requestBody)
-    body = serializeRequestBody(args['body'], contentType)
+    const serialized = await serializeRequestBody(args['body'], contentType)
+    body = serialized.body
+    bodyInfo = serialized.info
     if (body instanceof FormData) {
       headers.delete('Content-Type')
     } else {
@@ -135,9 +187,32 @@ export async function executeOperation(
     }
   }
 
+  return {
+    url,
+    method: operation.method,
+    headers: new Headers(init.headers),
+    body: init.body,
+    bodyInfo,
+    operation,
+  }
+}
+
+export async function executeOperation(
+  operation: ParsedOperation,
+  args: Record<string, unknown>,
+  config: HttpClientConfig
+): Promise<ExecutedRequest> {
+  const prepared = await prepareRequest(operation, args, config)
+
+  const init: RequestInit = {
+    method: prepared.method,
+    headers: prepared.headers,
+    body: prepared.body,
+  }
+
   let response: Response
   try {
-    response = await fetchWithRetry(url.toString(), init, config.fetchOptions)
+    response = await fetchWithRetry(prepared.url.toString(), init, config.fetchOptions)
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
     throw new RequestError(`Request failed: ${msg}`, error)
@@ -145,15 +220,15 @@ export async function executeOperation(
 
   if (response.status === 401 && config.auth?.refresh) {
     try {
-      init = await config.auth.refresh(url, init)
-      response = await fetchWithRetry(url.toString(), init, config.fetchOptions)
+      const refreshed = await config.auth.refresh(prepared.url, init)
+      response = await fetchWithRetry(prepared.url.toString(), refreshed, config.fetchOptions)
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
       throw new RequestError(`Authentication refresh failed: ${msg}`, error)
     }
   }
 
-  return { response, url: url.toString(), method: operation.method }
+  return { response, url: prepared.url.toString(), method: prepared.method }
 }
 
 function validateRequiredParams(
@@ -208,10 +283,18 @@ function getRequestContentType(requestBody: ParsedRequestBody): string {
   return jsonLike ?? mediaTypes[0] ?? 'application/json'
 }
 
-function serializeRequestBody(body: unknown, contentType: string): RequestInit['body'] {
+interface SerializedBody {
+  body: RequestInit['body']
+  info: PreparedBodyInfo
+}
+
+async function serializeRequestBody(body: unknown, contentType: string): Promise<SerializedBody> {
   if (isJsonContentType(contentType)) {
     try {
-      return JSON.stringify(body)
+      return {
+        body: JSON.stringify(body),
+        info: { kind: 'json', value: body, contentType },
+      }
     } catch {
       throw new Error('request body could not be serialized to JSON')
     }
@@ -220,27 +303,35 @@ function serializeRequestBody(body: unknown, contentType: string): RequestInit['
   const mimeType = getMimeType(contentType)
 
   if (mimeType === 'application/x-www-form-urlencoded') {
-    return serializeUrlEncodedBody(body)
+    return serializeUrlEncodedBody(body, contentType)
   }
 
   if (mimeType === 'multipart/form-data') {
-    return serializeMultipartBody(body)
+    return serializeMultipartBody(body, contentType)
   }
 
   if (isBinaryContentType(contentType)) {
-    return serializeBinaryBody(body)
+    return serializeBinaryBody(body, contentType)
   }
 
   if (typeof body === 'string') {
-    return body
+    return {
+      body,
+      info: { kind: 'text', value: body, contentType },
+    }
   }
 
   throw new Error(`request body for content type "${contentType}" must be a string, binary input, or structured form data`)
 }
 
-function serializeUrlEncodedBody(body: unknown): RequestInit['body'] {
-  if (typeof body === 'string' || body instanceof URLSearchParams) {
-    return body
+function serializeUrlEncodedBody(body: unknown, contentType: string): SerializedBody {
+  if (typeof body === 'string') {
+    const pairs = Array.from(new URLSearchParams(body).entries())
+    return { body, info: { kind: 'urlencoded', pairs, contentType } }
+  }
+
+  if (body instanceof URLSearchParams) {
+    return { body, info: { kind: 'urlencoded', pairs: Array.from(body.entries()), contentType } }
   }
 
   if (!isRecord(body)) {
@@ -251,7 +342,10 @@ function serializeUrlEncodedBody(body: unknown): RequestInit['body'] {
   for (const [key, value] of Object.entries(body)) {
     appendUrlEncodedValue(params, key, value)
   }
-  return params
+  return {
+    body: params,
+    info: { kind: 'urlencoded', pairs: Array.from(params.entries()), contentType },
+  }
 }
 
 function appendUrlEncodedValue(params: URLSearchParams, key: string, value: unknown): void {
@@ -282,9 +376,20 @@ function appendUrlEncodedValue(params: URLSearchParams, key: string, value: unkn
   params.append(key, JSON.stringify(value))
 }
 
-function serializeMultipartBody(body: unknown): FormData {
+async function serializeMultipartBody(body: unknown, contentType: string): Promise<SerializedBody> {
   if (body instanceof FormData) {
-    return body
+    const fields: MultipartField[] = []
+    for (const [name, value] of body.entries()) {
+      if (typeof value === 'string') {
+        fields.push({ name, kind: 'value', value })
+      } else {
+        const size = typeof (value as Blob).size === 'number' ? (value as Blob).size : 0
+        const type = (value as Blob).type || 'application/octet-stream'
+        const filename = (value as File).name ?? 'upload.bin'
+        fields.push({ name, kind: 'file', filename, contentType: type, bytes: size })
+      }
+    }
+    return { body, info: { kind: 'multipart', fields, contentType } }
   }
 
   if (!isRecord(body)) {
@@ -292,31 +397,67 @@ function serializeMultipartBody(body: unknown): FormData {
   }
 
   const form = new FormData()
+  const fields: MultipartField[] = []
   for (const [key, value] of Object.entries(body)) {
-    appendMultipartValue(form, key, value)
+    await appendMultipartValue(form, fields, key, value)
   }
-  return form
+  return { body: form, info: { kind: 'multipart', fields, contentType } }
 }
 
-function appendMultipartValue(form: FormData, key: string, value: unknown): void {
+async function appendMultipartValue(
+  form: FormData,
+  fields: MultipartField[],
+  key: string,
+  value: unknown
+): Promise<void> {
   if (value === undefined) return
 
   if (Array.isArray(value)) {
     for (const item of value) {
-      appendMultipartValue(form, key, item)
+      await appendMultipartValue(form, fields, key, item)
     }
+    return
+  }
+
+  if (typeof value === 'string') {
+    const fileRef = parseFileReference(value)
+    if (fileRef) {
+      const fileContents = await readFile(fileRef.path)
+      const bytes = Buffer.from(fileContents)
+      const filename = path.basename(fileRef.path)
+      const blob = new Blob([bytes], { type: 'application/octet-stream' })
+      form.append(key, blob, filename)
+      fields.push({
+        name: key,
+        kind: 'file',
+        path: fileRef.path,
+        filename,
+        contentType: 'application/octet-stream',
+        bytes: bytes.byteLength,
+      })
+      return
+    }
+    const literal = unescapeFileReference(value)
+    form.append(key, literal)
+    fields.push({ name: key, kind: 'value', value: literal })
     return
   }
 
   if (isBinaryBodyInput(value)) {
     const bytes = Buffer.from(value.dataBase64, 'base64')
-    const blob = new Blob([bytes], { type: value.contentType ?? 'application/octet-stream' })
-    form.append(key, blob, value.filename ?? 'upload.bin')
+    const filename = value.filename ?? 'upload.bin'
+    const type = value.contentType ?? 'application/octet-stream'
+    const blob = new Blob([bytes], { type })
+    form.append(key, blob, filename)
+    fields.push({ name: key, kind: 'file', filename, contentType: type, bytes: bytes.byteLength })
     return
   }
 
   if (value instanceof Blob) {
     form.append(key, value)
+    const filename = (value as File).name ?? 'upload.bin'
+    const type = value.type || 'application/octet-stream'
+    fields.push({ name: key, kind: 'file', filename, contentType: type, bytes: value.size })
     return
   }
 
@@ -324,41 +465,101 @@ function appendMultipartValue(form: FormData, key: string, value: unknown): void
     const bytes = value instanceof ArrayBuffer
       ? Uint8Array.from(new Uint8Array(value))
       : Uint8Array.from(new Uint8Array(value.buffer, value.byteOffset, value.byteLength))
-    form.append(key, new Blob([bytes], { type: 'application/octet-stream' }), 'upload.bin')
+    const blob = new Blob([bytes], { type: 'application/octet-stream' })
+    form.append(key, blob, 'upload.bin')
+    fields.push({
+      name: key,
+      kind: 'file',
+      filename: 'upload.bin',
+      contentType: 'application/octet-stream',
+      bytes: bytes.byteLength,
+    })
     return
   }
 
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+  if (typeof value === 'number' || typeof value === 'boolean') {
     form.append(key, String(value))
+    fields.push({ name: key, kind: 'value', value: String(value) })
     return
   }
 
   if (value === null) {
     form.append(key, '')
+    fields.push({ name: key, kind: 'value', value: '' })
     return
   }
 
-  form.append(key, JSON.stringify(value))
+  const serialized = JSON.stringify(value)
+  form.append(key, serialized)
+  fields.push({ name: key, kind: 'value', value: serialized })
 }
 
-function serializeBinaryBody(body: unknown): RequestInit['body'] {
-  if (typeof body === 'string' || body instanceof Blob) {
-    return body
+async function serializeBinaryBody(body: unknown, contentType: string): Promise<SerializedBody> {
+  if (typeof body === 'string') {
+    const fileRef = parseFileReference(body)
+    if (fileRef) {
+      const bytes = await readFile(fileRef.path)
+      return {
+        body: bytes,
+        info: {
+          kind: 'binary',
+          contentType,
+          filePath: fileRef.path,
+          filename: path.basename(fileRef.path),
+          bytes: bytes.byteLength,
+        },
+      }
+    }
+    const literal = unescapeFileReference(body)
+    return {
+      body: literal,
+      info: { kind: 'binary', contentType, bytes: Buffer.byteLength(literal, 'utf-8') },
+    }
+  }
+
+  if (body instanceof Blob) {
+    return { body, info: { kind: 'binary', contentType, bytes: body.size } }
   }
 
   if (body instanceof ArrayBuffer) {
-    return new Uint8Array(body)
+    const bytes = new Uint8Array(body)
+    return { body: bytes, info: { kind: 'binary', contentType, bytes: bytes.byteLength } }
   }
 
   if (ArrayBuffer.isView(body)) {
-    return new Uint8Array(body.buffer, body.byteOffset, body.byteLength)
+    const bytes = new Uint8Array(body.buffer, body.byteOffset, body.byteLength)
+    return { body: bytes, info: { kind: 'binary', contentType, bytes: bytes.byteLength } }
   }
 
   if (isBinaryBodyInput(body)) {
-    return Buffer.from(body.dataBase64, 'base64')
+    const bytes = Buffer.from(body.dataBase64, 'base64')
+    return {
+      body: bytes,
+      info: {
+        kind: 'binary',
+        contentType,
+        filename: body.filename,
+        bytes: bytes.byteLength,
+      },
+    }
   }
 
   throw new Error('binary request body must be a string, Blob, ArrayBuffer, typed array, or { dataBase64, filename?, contentType? }')
+}
+
+/**
+ * Parse a curl-style `@path` file reference. Leading `@@` is an escape for a
+ * literal value starting with `@`.
+ */
+function parseFileReference(value: string): { path: string } | null {
+  if (!value.startsWith('@')) return null
+  if (value.startsWith('@@')) return null
+  return { path: value.slice(1) }
+}
+
+function unescapeFileReference(value: string): string {
+  if (value.startsWith('@@')) return value.slice(1)
+  return value
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

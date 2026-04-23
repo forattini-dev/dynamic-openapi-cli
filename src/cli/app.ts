@@ -1,10 +1,19 @@
 import { readFile } from 'node:fs/promises'
 import { createCLI, formatErrors, type CLI, type PrimitiveValue } from 'dynamic-openapi-tools/cli'
-import { resolveAuth, type AuthConfig } from 'dynamic-openapi-tools/auth'
+import { resolveAuth, type AuthConfig, type ResolvedAuth } from 'dynamic-openapi-tools/auth'
 import { filterOperations, type OperationFilters, type ParsedSpec } from 'dynamic-openapi-tools/parser'
 import type { FetchWithRetryOptions } from 'dynamic-openapi-tools/utils'
-import { executeOperation, RequestError, ValidationError, resolveBaseUrl, type HttpClientConfig } from '../http/client.js'
+import { createOAuth2AuthCodeAuth, detectOAuth2AuthCode } from '../auth/resolve.js'
+import {
+  executeOperation,
+  prepareRequest,
+  RequestError,
+  ValidationError,
+  resolveBaseUrl,
+  type HttpClientConfig,
+} from '../http/client.js'
 import { buildCommandsFromSpec } from './command-builder.js'
+import { renderCurl } from './curl.js'
 import { renderResponse, type OutputOptions } from './output.js'
 
 export interface BuildCliOptions {
@@ -46,6 +55,11 @@ const GLOBAL_OPTIONS = {
     description: 'Print HTTP status and headers to stderr',
     default: false,
   },
+  'dry-run': {
+    type: 'boolean' as const,
+    description: 'Print the equivalent curl command instead of firing the request',
+    default: false,
+  },
 }
 
 export function buildCli(options: BuildCliOptions): CLI {
@@ -57,7 +71,7 @@ export function buildCli(options: BuildCliOptions): CLI {
   const description = options.description ?? spec.title
 
   const baseUrl = resolveBaseUrl(spec, options.baseUrl, options.serverIndex)
-  const auth = resolveAuth(options.authConfig, spec.securitySchemes)
+  const auth = resolveAuthWithOAuth2(spec, options.authConfig)
 
   const httpConfig: HttpClientConfig = {
     baseUrl,
@@ -74,8 +88,16 @@ export function buildCli(options: BuildCliOptions): CLI {
         raw: Boolean(args.options['raw']),
         verbose: Boolean(args.options['verbose']),
       }
+      const dryRun = Boolean(args.options['dry-run'])
 
       try {
+        if (dryRun) {
+          const prepared = await prepareRequest(context.operation, merged, httpConfig)
+          process.stdout.write(renderCurl(prepared))
+          process.stdout.write('\n')
+          return
+        }
+
         const { response } = await executeOperation(context.operation, merged, httpConfig)
         const code = await renderResponse(response, outputOptions)
         if (code !== 0) process.exitCode = code
@@ -168,7 +190,14 @@ async function mergeArgs(
   }
 
   for (const [key, value] of Object.entries(args.options)) {
-    if (key === 'output' || key === 'raw' || key === 'verbose' || key === 'body' || key === 'body-file') continue
+    if (
+      key === 'output' ||
+      key === 'raw' ||
+      key === 'verbose' ||
+      key === 'dry-run' ||
+      key === 'body' ||
+      key === 'body-file'
+    ) continue
     if (value !== undefined) merged[key] = value
   }
 
@@ -178,12 +207,36 @@ async function mergeArgs(
     if (bodyFile) {
       const text = await readFile(bodyFile, 'utf-8')
       merged['body'] = tryParseJson(text)
+    } else if (bodyRaw === '-') {
+      const text = await readStdin()
+      merged['body'] = tryParseJson(text)
     } else if (bodyRaw !== undefined) {
       merged['body'] = tryParseJson(bodyRaw)
     }
   }
 
   return merged
+}
+
+/**
+ * Use the tools' resolveAuth first (bearer, basic, apiKey, client-credentials,
+ * custom) — if nothing matched, fall back to OAuth2 authorization-code when
+ * the spec declares such a flow and env vars provide a client id.
+ */
+function resolveAuthWithOAuth2(spec: ParsedSpec, authConfig: AuthConfig | undefined): ResolvedAuth | null {
+  const resolved = resolveAuth(authConfig, spec.securitySchemes)
+  if (resolved) return resolved
+  const detected = detectOAuth2AuthCode(spec.securitySchemes)
+  if (detected) return createOAuth2AuthCodeAuth(detected.config)
+  return null
+}
+
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = []
+  for await (const chunk of process.stdin) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string))
+  }
+  return Buffer.concat(chunks).toString('utf-8')
 }
 
 function pickString(value: PrimitiveValue | PrimitiveValue[] | undefined): string | undefined {

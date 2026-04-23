@@ -246,13 +246,62 @@ $ my-cli get-pet-by-id 42 --include=photos
 | Binary ≤ 256 KB | Inline JSON envelope with `base64` data | same | Saved as raw bytes |
 | Binary > 256 KB | Error: `-o <file>` required | same | Saved as raw bytes |
 
-Every subcommand gets three global options for free:
+Every subcommand gets four global options for free:
 
 ```
   -o, --output <file>       Save response body to file
       --raw                 Don't pretty-print JSON
   -V, --verbose             Print HTTP status + headers to stderr
+      --dry-run             Print the equivalent curl command instead of firing the request
 ```
+
+### `--dry-run`: preview requests as curl
+
+Every CLI or bundled shim can print the resolved request as a `curl` command — URL, headers (including the ones resolved by auth), and body — without firing it:
+
+```bash
+$ petstore list-pets --dry-run --limit=5 --status=available
+curl -X GET 'https://api.example.com/pets?limit=5&status=available' \
+  -H 'accept: application/json' \
+  -H 'authorization: Bearer sk-…'
+
+$ petstore create-pet --dry-run --body='{"name":"rex"}'
+curl -X POST 'https://api.example.com/pets' \
+  -H 'accept: application/json' \
+  -H 'content-type: application/json' \
+  --data '{"name":"rex"}'
+```
+
+Useful for copy-pasting into bug reports, sharing a reproducer, or feeding another tool. Works with every body kind: JSON, URL-encoded, multipart, and binary.
+
+### Piping bodies: `--body=-`, `--body-file`, and `@path`
+
+| Source | How |
+|:-------|:----|
+| Inline literal | `--body='{"name":"rex"}'` |
+| From stdin | `echo '{…}' \| my-cli create-pet --body=-` |
+| From a file | `my-cli create-pet --body-file=./new-pet.json` |
+| Multipart file upload | `--body='{"file":"@/path/to/a.pdf","kind":"invoice"}'` |
+| Binary upload | `--body='@/path/to/blob.bin'` (for `application/octet-stream` bodies) |
+
+`@path` works anywhere a body value can be a file reference — multipart field values, binary request bodies. Prefix with `@@` to escape (a literal string starting with `@`). The CLI reads the file at request time and streams the bytes into the multipart envelope or the request body.
+
+### Shell completions
+
+`cli-args-parser` generates completions for the three major shells. Both the dynamic CLI and bundled shims expose them as `completion <shell>`:
+
+```bash
+# Bash
+dynamic-openapi-cli -s ./spec.yaml completion bash >> ~/.bashrc
+
+# Zsh — drop into a dir on your $fpath, or eval it at shell startup
+petstore completion zsh > "${fpath[1]}/_petstore"
+
+# Fish
+petstore completion fish > ~/.config/fish/completions/petstore.fish
+```
+
+Completions cover top-level commands and per-command options. Bundled CLIs pass through transparently, so `my-api completion bash` works on any shim.
 
 Exit codes:
 
@@ -424,6 +473,7 @@ Same variables and resolution order as [`dynamic-openapi-mcp`](https://github.co
 | API Key (header/query/cookie) | `OPENAPI_API_KEY` or `OPENAPI_AUTH_<SCHEME>_KEY` | `auth.apiKey` |
 | Basic | `OPENAPI_AUTH_<SCHEME>_TOKEN` as `user:pass` | `auth.basicAuth` |
 | OAuth2 client credentials | — | `auth.oauth2` (auto-refresh) |
+| OAuth2 authorization code | `OPENAPI_OAUTH2_CLIENT_ID` (+ `OPENAPI_OAUTH2_SCOPES`) | `new OAuth2AuthCodeFlow({…})` |
 | Custom token exchange | — | `auth.tokenExchange` (auto-refresh) |
 | Fully custom | — | `auth.custom` (callback) |
 
@@ -448,6 +498,30 @@ export OPENAPI_AUTH_TOKEN=$(vault read -field=token secret/petstore)
 petstore list-pets
 petstore create-pet --body-file=new-pet.json
 ```
+
+### OAuth2 authorization code (browser login)
+
+When the spec declares an OAuth2 `authorizationCode` flow and `OPENAPI_OAUTH2_CLIENT_ID` is present, the CLI triggers a browser-based login on the first request — PKCE + loopback server on `127.0.0.1:7999` — and caches the token under `$XDG_DATA_HOME/dynamic-openapi-cli/tokens/`. Subsequent calls reuse the cached token and refresh it transparently when it expires.
+
+```bash
+export OPENAPI_OAUTH2_CLIENT_ID=cli-public
+export OPENAPI_OAUTH2_SCOPES="read:pets write:pets"
+# optional, defaults shown:
+# export OPENAPI_OAUTH2_PORT=7999
+# export OPENAPI_OAUTH2_REDIRECT_URI=http://127.0.0.1:7999/callback
+# export OPENAPI_OAUTH2_CLIENT_SECRET=...   # confidential clients only
+
+# Explicit login / logout (spec required):
+dynamic-openapi-cli -s ./spec.yaml login         # opens a browser, writes the cached token
+dynamic-openapi-cli -s ./spec.yaml logout        # removes the cached token
+
+# Or just run any operation — login triggers automatically on the first call.
+petstore list-pets
+```
+
+Per-scheme env vars (derived from the scheme name in the spec, same casing rules as other schemes) take precedence: `OPENAPI_AUTH_<SCHEME>_CLIENT_ID`, `OPENAPI_AUTH_<SCHEME>_SCOPES`, `OPENAPI_AUTH_<SCHEME>_PORT`, `OPENAPI_AUTH_<SCHEME>_REDIRECT_URI`, `OPENAPI_AUTH_<SCHEME>_CLIENT_SECRET`.
+
+Redirect URI must match what the provider has registered — override via `OPENAPI_OAUTH2_REDIRECT_URI` (or per-scheme) when using hosts other than `127.0.0.1:<port>/callback`. The token file has mode `0600`.
 
 ---
 
@@ -474,6 +548,15 @@ Global options (after the command):
   -o, --output <file>           Save response body to file
       --raw                     Skip pretty-printing
   -V, --verbose                 Print HTTP status + headers to stderr
+      --dry-run                 Print the equivalent curl command instead of firing the request
+
+Request body (for operations that accept one):
+      --body <string|->         Inline body; pass "-" to read from stdin
+      --body-file <path>        Read body from a file
+                                Multipart / binary bodies accept "@path" for file uploads.
+
+Subcommands (spec required):
+  completion <shell>            Print a shell completion script (bash, zsh, fish)
 
 Built-in subcommands (no spec required):
   bundle                        Package a spec into a standalone bash CLI
@@ -491,6 +574,11 @@ Built-in subcommands (no spec required):
 | `OPENAPI_API_KEY` | Global API key |
 | `OPENAPI_AUTH_<SCHEME>_TOKEN` | Per-scheme bearer/basic token |
 | `OPENAPI_AUTH_<SCHEME>_KEY` | Per-scheme API key |
+| `OPENAPI_OAUTH2_CLIENT_ID` | OAuth2 authorization-code client id (activates browser login) |
+| `OPENAPI_OAUTH2_CLIENT_SECRET` | OAuth2 client secret (confidential clients only) |
+| `OPENAPI_OAUTH2_SCOPES` | Space- or comma-separated scope list (overrides spec) |
+| `OPENAPI_OAUTH2_PORT` | Loopback redirect port (default 7999) |
+| `OPENAPI_OAUTH2_REDIRECT_URI` | Full redirect URI override |
 
 ---
 
@@ -664,11 +752,11 @@ Pick the MCP version when you want AI agents to call your API. Pick the CLI vers
 
 ## Roadmap
 
-- [ ] Shell completion scripts (bash / zsh / fish) — `cli-args-parser` already generates them, need to expose on the bundle
-- [ ] `--dry-run` flag that prints the curl equivalent without firing the request
-- [ ] Read request body from stdin (`--body -`) for piping
-- [ ] OAuth2 authorization code flow (browser-based)
-- [ ] First-class multipart uploads from file paths (today: via `{ dataBase64, filename }` JSON)
+- [x] Shell completion scripts (bash / zsh / fish) — `completion <shell>` subcommand
+- [x] `--dry-run` flag that prints the curl equivalent without firing the request
+- [x] Read request body from stdin (`--body=-`) for piping
+- [x] First-class multipart / binary uploads from file paths (`@path`, curl-style)
+- [x] OAuth2 authorization code flow (browser-based, PKCE, disk-cached tokens)
 
 Got an idea? Open an issue.
 

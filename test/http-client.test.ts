@@ -1,8 +1,12 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   resolveServerUrl,
   resolveBaseUrl,
   executeOperation,
+  prepareRequest,
   RequestError,
   ValidationError,
   isJsonContentType,
@@ -447,6 +451,80 @@ describe('executeOperation', () => {
     await expect(
       executeOperation(op, {}, { baseUrl: 'https://api.example.com', auth })
     ).rejects.toBeInstanceOf(RequestError)
+  })
+})
+
+describe('prepareRequest + @path file references', () => {
+  it('reads a multipart @path value from disk and emits a file field', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'multipart-atpath-'))
+    const filePath = join(tmp, 'hello.txt')
+    writeFileSync(filePath, 'hello world')
+    try {
+      const op = baseOp({
+        method: 'POST',
+        requestBody: {
+          required: false,
+          content: { 'multipart/form-data': { schema: { type: 'object' } } },
+        },
+      })
+      const prepared = await prepareRequest(
+        op,
+        { body: { file: `@${filePath}`, name: 'greeting' } },
+        { baseUrl: 'https://api.example.com', auth: null }
+      )
+      expect(prepared.bodyInfo.kind).toBe('multipart')
+      if (prepared.bodyInfo.kind !== 'multipart') throw new Error('unreachable')
+      const fileField = prepared.bodyInfo.fields.find((f) => f.name === 'file')
+      const nameField = prepared.bodyInfo.fields.find((f) => f.name === 'name')
+      expect(fileField).toMatchObject({ kind: 'file', path: filePath, filename: 'hello.txt', bytes: 11 })
+      expect(nameField).toMatchObject({ kind: 'value', value: 'greeting' })
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  it('treats @@literal as an escaped literal starting with @', async () => {
+    const op = baseOp({
+      method: 'POST',
+      requestBody: {
+        required: false,
+        content: { 'multipart/form-data': { schema: { type: 'object' } } },
+      },
+    })
+    const prepared = await prepareRequest(
+      op,
+      { body: { note: '@@not-a-path' } },
+      { baseUrl: 'https://api.example.com', auth: null }
+    )
+    if (prepared.bodyInfo.kind !== 'multipart') throw new Error('unreachable')
+    const field = prepared.bodyInfo.fields[0]!
+    expect(field).toMatchObject({ kind: 'value', value: '@not-a-path' })
+  })
+
+  it('reads an @path binary body from disk', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'binary-atpath-'))
+    const filePath = join(tmp, 'blob.bin')
+    writeFileSync(filePath, Buffer.from([1, 2, 3, 4, 5]))
+    try {
+      const op = baseOp({
+        method: 'PUT',
+        requestBody: {
+          required: false,
+          content: { 'application/octet-stream': { schema: { type: 'string' } } },
+        },
+      })
+      const prepared = await prepareRequest(
+        op,
+        { body: `@${filePath}` },
+        { baseUrl: 'https://api.example.com', auth: null }
+      )
+      expect(prepared.bodyInfo.kind).toBe('binary')
+      if (prepared.bodyInfo.kind !== 'binary') throw new Error('unreachable')
+      expect(prepared.bodyInfo.filePath).toBe(filePath)
+      expect(prepared.bodyInfo.bytes).toBe(5)
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
   })
 })
 

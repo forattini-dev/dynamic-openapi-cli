@@ -31,6 +31,10 @@ export type {
   TokenExchangeApplyConfig,
 } from 'dynamic-openapi-tools/auth'
 
+export { OAuth2AuthCodeFlow } from './auth/oauth2-auth-code.js'
+export type { OAuth2AuthCodeConfig } from './auth/oauth2-auth-code.js'
+export { detectOAuth2AuthCode, createOAuth2AuthCodeAuth } from './auth/resolve.js'
+
 export { fetchWithRetry } from 'dynamic-openapi-tools/utils'
 export type { FetchWithRetryOptions, RetryPolicy } from 'dynamic-openapi-tools/utils'
 

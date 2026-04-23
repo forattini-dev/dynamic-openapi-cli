@@ -152,6 +152,40 @@ describe('buildCli + runCli', () => {
     expect([1, 2]).toContain(code)
   })
 
+  it('prints a curl equivalent and skips fetch on --dry-run', async () => {
+    const spec = await miniSpec()
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as never)
+    const cli = buildCli({ spec, baseUrl: 'https://api.example.com' })
+    const code = await runCli(cli, ['list-pets', '--dry-run', '--limit=5', '--status=available'])
+    expect(code).toBe(0)
+    expect(fetchSpy).not.toHaveBeenCalled()
+    const out = stdout.mock.calls.map((c) => String(c[0])).join('')
+    expect(out).toContain(`curl -X GET 'https://api.example.com/pets?limit=5&status=available'`)
+  })
+
+  it('reads request body from stdin when --body=-', async () => {
+    const spec = await miniSpec()
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('{}', { status: 201 }))
+    vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as never)
+
+    async function* fakeStdin(): AsyncGenerator<Buffer> {
+      yield Buffer.from('{"name":"stdinPet"}')
+    }
+    const originalStdin = process.stdin as unknown as AsyncIterable<Buffer>
+    Object.defineProperty(process, 'stdin', { configurable: true, value: fakeStdin() })
+
+    try {
+      const cli = buildCli({ spec, baseUrl: 'https://api.example.com' })
+      await runCli(cli, ['create-pet', '--body=-'])
+      expect(fetchSpy.mock.calls[0]![1]!.body).toBe('{"name":"stdinPet"}')
+    } finally {
+      Object.defineProperty(process, 'stdin', { configurable: true, value: originalStdin })
+    }
+  })
+
   it('uses overrides for name, version, and description', async () => {
     const spec = await miniSpec()
     const cli = buildCli({
