@@ -3,8 +3,8 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { parse as parseYaml } from 'yaml'
 import { resolveSpec } from 'dynamic-openapi-tools/parser'
+import type { OpenAPIV3 } from 'dynamic-openapi-tools/parser'
 import { buildCommandsFromSpec } from '../src/cli/command-builder.js'
-import type { OpenAPIV3 } from 'openapi-types'
 
 async function loadFixture(name: string) {
   const raw = await readFile(path.join(import.meta.dirname, 'fixtures', name), 'utf-8')

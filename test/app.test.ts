@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { parse as parseYaml } from 'yaml'
-import type { OpenAPIV3 } from 'openapi-types'
 import { resolveSpec } from 'dynamic-openapi-tools/parser'
+import type { OpenAPIV3 } from 'dynamic-openapi-tools/parser'
 import { buildCli, runCli } from '../src/cli/app.js'
 
 async function miniSpec() {

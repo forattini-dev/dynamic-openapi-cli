@@ -1,6 +1,5 @@
-import type { CommandDefinition, OptionDefinition, OptionType, PositionalDefinition, PrimitiveValue } from 'cli-args-parser'
-import type { OpenAPIV3 } from 'openapi-types'
-import type { ParsedOperation, ParsedParameter, ParsedSpec } from 'dynamic-openapi-tools/parser'
+import type { CommandDefinition, OptionDefinition, OptionType, PositionalDefinition, PrimitiveValue } from 'dynamic-openapi-tools/cli'
+import type { OpenAPIV3, ParsedOperation, ParsedParameter, ParsedSpec } from 'dynamic-openapi-tools/parser'
 import { sanitizeToolName, truncateDescription } from 'dynamic-openapi-tools/utils'
 
 export interface CommandContext {

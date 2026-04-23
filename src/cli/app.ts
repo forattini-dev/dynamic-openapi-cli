@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { createCLI, formatErrors, type CLI, type PrimitiveValue } from 'cli-args-parser'
+import { createCLI, formatErrors, type CLI, type PrimitiveValue } from 'dynamic-openapi-tools/cli'
 import { resolveAuth, type AuthConfig } from 'dynamic-openapi-tools/auth'
 import { filterOperations, type OperationFilters, type ParsedSpec } from 'dynamic-openapi-tools/parser'
 import type { FetchWithRetryOptions } from 'dynamic-openapi-tools/utils'
