@@ -9,10 +9,12 @@ import {
   prepareRequest,
   RequestError,
   ValidationError,
+  SafetyError,
   isJsonContentType,
   isBinaryContentType,
   getMimeType,
 } from '../src/http/client.js'
+import { SAFETY_ENV_VARS } from '../src/http/safety.js'
 import type { ParsedOperation, ParsedSpec } from 'dynamic-openapi-tools/parser'
 
 function baseOp(overrides: Partial<ParsedOperation> = {}): ParsedOperation {
@@ -554,5 +556,122 @@ describe('content type helpers', () => {
   it('extracts the mime type from a content type header', () => {
     expect(getMimeType('application/json; charset=utf-8')).toBe('application/json')
     expect(getMimeType('')).toBe('')
+  })
+})
+
+describe('safety: dry-run + destructive consent', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    delete process.env[SAFETY_ENV_VARS.dryRun]
+    delete process.env[SAFETY_ENV_VARS.noDestructive]
+  })
+
+  it('config.dryRun renders a curl preview and does NOT call fetch', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 200 }))
+    const op = baseOp({ method: 'GET', path: '/things' })
+    const result = await executeOperation(
+      op,
+      {},
+      { baseUrl: 'https://api.example.com', auth: null, dryRun: true }
+    )
+    expect(result.dryRun).toBe(true)
+    expect(result.sideEffect).toBe('read-only')
+    expect(result.method).toBe('GET')
+    expect(spy).not.toHaveBeenCalled()
+    const body = await result.response.text()
+    expect(body).toContain('curl -X GET')
+    expect(body).toContain('https://api.example.com/things')
+  })
+
+  it('DYNAMIC_OPENAPI_DRY_RUN=1 forces dry-run even when config.dryRun is false', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 200 }))
+    process.env[SAFETY_ENV_VARS.dryRun] = '1'
+    const op = baseOp({ method: 'GET', path: '/things' })
+    const result = await executeOperation(
+      op,
+      {},
+      { baseUrl: 'https://api.example.com', auth: null, dryRun: false }
+    )
+    expect(result.dryRun).toBe(true)
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('DELETE without allowDestructive throws SafetyError(no-consent) and does NOT call fetch', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 200 }))
+    const op = baseOp({
+      method: 'DELETE',
+      path: '/things/{id}',
+      operationId: 'deleteThing',
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+    })
+    await expect(
+      executeOperation(op, { id: '42' }, { baseUrl: 'https://api.example.com', auth: null })
+    ).rejects.toMatchObject({
+      name: 'SafetyError',
+      sideEffect: 'destructive',
+      reason: 'no-consent',
+      operationId: 'deleteThing',
+    })
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('DELETE with allowDestructive proceeds to fetch', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 200 }))
+    const op = baseOp({
+      method: 'DELETE',
+      path: '/things/{id}',
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+    })
+    const result = await executeOperation(
+      op,
+      { id: '42' },
+      { baseUrl: 'https://api.example.com', auth: null, allowDestructive: true }
+    )
+    expect(spy).toHaveBeenCalledTimes(1)
+    expect(result.sideEffect).toBe('destructive')
+    const url = String(spy.mock.calls[0]![0])
+    expect(url).toContain('/things/42')
+  })
+
+  it('DYNAMIC_OPENAPI_NO_DESTRUCTIVE=1 rejects DELETE even with allowDestructive (floor is absolute)', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 200 }))
+    process.env[SAFETY_ENV_VARS.noDestructive] = '1'
+    const op = baseOp({
+      method: 'DELETE',
+      path: '/things/{id}',
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+    })
+    await expect(
+      executeOperation(
+        op,
+        { id: '42' },
+        { baseUrl: 'https://api.example.com', auth: null, allowDestructive: true }
+      )
+    ).rejects.toMatchObject({ name: 'SafetyError', reason: 'floor-blocked' })
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('x-side-effect: read-only on a POST is allowed without allowDestructive', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 200 }))
+    const op = baseOp({
+      method: 'POST',
+      path: '/search',
+      ...({ 'x-side-effect': 'read-only' } as Record<string, unknown>),
+    })
+    await executeOperation(op, {}, { baseUrl: 'https://api.example.com', auth: null })
+    expect(spy).toHaveBeenCalledTimes(1)
+  })
+
+  it('x-destructive: true on a GET requires allowDestructive', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 200 }))
+    const op = baseOp({
+      method: 'GET',
+      path: '/dangerous',
+      ...({ 'x-destructive': true } as Record<string, unknown>),
+    })
+    await expect(
+      executeOperation(op, {}, { baseUrl: 'https://api.example.com', auth: null })
+    ).rejects.toBeInstanceOf(SafetyError)
+    expect(spy).not.toHaveBeenCalled()
   })
 })

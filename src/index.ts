@@ -46,8 +46,15 @@ export {
   resolveServerUrl,
   RequestError,
   ValidationError,
+  SafetyError,
+  classifySideEffect,
+  isDryRunFloor,
+  isNoDestructiveFloor,
+  SAFETY_ENV_VARS,
+  renderCurl,
+  shellQuote,
 } from './http/client.js'
-export type { HttpClientConfig, ExecutedRequest } from './http/client.js'
+export type { HttpClientConfig, ExecutedRequest, SideEffect } from './http/client.js'
 
 export { buildCommandsFromSpec } from './cli/command-builder.js'
 export { buildBundle } from './cli/bundle.js'

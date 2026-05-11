@@ -1,9 +1,25 @@
-import type { PreparedRequest } from '../http/client.js'
+import type { PreparedRequest } from './client.js'
+
+/**
+ * Header names whose values are redacted to `***` in rendered output. The
+ * comparison is case-insensitive; values match the lowercased name.
+ */
+const REDACTED_HEADERS = new Set([
+  'authorization',
+  'proxy-authorization',
+  'cookie',
+  'set-cookie',
+  'x-api-key',
+  'api-key',
+])
 
 /**
  * Render the resolved request as a multiline curl command, suitable for
  * `--dry-run` output. Headers follow a stable order (the Headers object's
  * insertion order after `auth.apply`).
+ *
+ * Sensitive headers (Authorization, Cookie, api-key variants) are always
+ * redacted to `***` — tokens never reach stdout, even in dry-run.
  */
 export function renderCurl(prepared: PreparedRequest): string {
   const parts: string[] = []
@@ -14,7 +30,8 @@ export function renderCurl(prepared: PreparedRequest): string {
     headerEntries.push([key, value])
   })
   for (const [key, value] of headerEntries) {
-    parts.push(`  -H ${shellQuote(`${key}: ${value}`)}`)
+    const safeValue = REDACTED_HEADERS.has(key.toLowerCase()) ? '***' : value
+    parts.push(`  -H ${shellQuote(`${key}: ${safeValue}`)}`)
   }
 
   const bodyLines = renderBody(prepared)

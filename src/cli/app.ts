@@ -11,14 +11,13 @@ import { filterOperations, type OperationFilters, type ParsedSpec } from 'dynami
 import type { FetchWithRetryOptions } from 'dynamic-openapi-tools/utils'
 import {
   executeOperation,
-  prepareRequest,
   RequestError,
   ValidationError,
   resolveBaseUrl,
   type HttpClientConfig,
 } from '../http/client.js'
 import { buildCommandsFromSpec } from './command-builder.js'
-import { renderCurl } from './curl.js'
+import { SAFETY_ENV_VARS, SafetyError } from '../http/safety.js'
 import { renderResponse, type OutputOptions } from './output.js'
 
 export interface BuildCliOptions {
@@ -65,6 +64,12 @@ const GLOBAL_OPTIONS = {
     description: 'Print the equivalent curl command instead of firing the request',
     default: false,
   },
+  yes: {
+    short: 'y',
+    type: 'boolean' as const,
+    description: 'Consent to destructive operations (DELETE, x-side-effect: destructive)',
+    default: false,
+  },
 }
 
 export function buildCli(options: BuildCliOptions): CLI {
@@ -78,13 +83,6 @@ export function buildCli(options: BuildCliOptions): CLI {
   const baseUrl = resolveBaseUrl(spec, options.baseUrl, options.serverIndex)
   const auth = resolveAuthWithOAuth2(spec, options.authConfig, options.name)
 
-  const httpConfig: HttpClientConfig = {
-    baseUrl,
-    auth,
-    defaultHeaders: options.defaultHeaders,
-    fetchOptions: options.fetchOptions,
-  }
-
   const { commands, collisions } = buildCommandsFromSpec(spec, {
     handler: async (context, args) => {
       const merged = await mergeArgs(context.operation, args)
@@ -93,20 +91,33 @@ export function buildCli(options: BuildCliOptions): CLI {
         raw: Boolean(args.options['raw']),
         verbose: Boolean(args.options['verbose']),
       }
-      const dryRun = Boolean(args.options['dry-run'])
+
+      const httpConfig: HttpClientConfig = {
+        baseUrl,
+        auth,
+        defaultHeaders: options.defaultHeaders,
+        fetchOptions: options.fetchOptions,
+        dryRun: Boolean(args.options['dry-run']),
+        allowDestructive: Boolean(args.options['yes']),
+      }
 
       try {
+        const { response, dryRun } = await executeOperation(context.operation, merged, httpConfig)
         if (dryRun) {
-          const prepared = await prepareRequest(context.operation, merged, httpConfig)
-          process.stdout.write(renderCurl(prepared))
-          process.stdout.write('\n')
+          process.stdout.write(await response.text())
           return
         }
-
-        const { response } = await executeOperation(context.operation, merged, httpConfig)
         const code = await renderResponse(response, outputOptions)
         if (code !== 0) process.exitCode = code
       } catch (error) {
+        if (error instanceof SafetyError) {
+          process.stderr.write(`safety: ${error.message}\n`)
+          if (error.reason === 'no-consent') {
+            process.stderr.write(`  retry with --yes, or set ${SAFETY_ENV_VARS.noDestructive}=0 if a floor is in effect.\n`)
+          }
+          process.exitCode = 3
+          return
+        }
         if (error instanceof ValidationError) {
           process.stderr.write(`${error.message}\n`)
           process.exitCode = 2
@@ -200,6 +211,7 @@ async function mergeArgs(
       key === 'raw' ||
       key === 'verbose' ||
       key === 'dry-run' ||
+      key === 'yes' ||
       key === 'body' ||
       key === 'body-file'
     ) continue

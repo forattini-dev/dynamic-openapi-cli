@@ -3,19 +3,40 @@ import path from 'node:path'
 import type { ResolvedAuth } from 'dynamic-openapi-tools/auth'
 import type { ParsedOperation, ParsedRequestBody, ParsedServer, ParsedSpec } from 'dynamic-openapi-tools/parser'
 import { fetchWithRetry, type FetchWithRetryOptions } from 'dynamic-openapi-tools/utils'
+import { renderCurl } from './curl.js'
+import {
+  SAFETY_ENV_VARS,
+  SafetyError,
+  classifySideEffect,
+  isDryRunFloor,
+  isNoDestructiveFloor,
+  type SideEffect,
+} from './safety.js'
 
 export interface HttpClientConfig {
   baseUrl: string
   auth: ResolvedAuth | null
   defaultHeaders?: Record<string, string>
   fetchOptions?: FetchWithRetryOptions
+  /** Render the curl-equivalent instead of firing the request. */
+  dryRun?: boolean
+  /** Consent for destructive operations (DELETE or x-side-effect: destructive). */
+  allowDestructive?: boolean
 }
 
 export interface ExecutedRequest {
   response: Response
   url: string
   method: string
+  /** True when the response is a synthetic curl preview produced by dry-run. */
+  dryRun?: boolean
+  /** Side-effect classification used at execution time. */
+  sideEffect?: SideEffect
 }
+
+export { SafetyError, classifySideEffect, isDryRunFloor, isNoDestructiveFloor, SAFETY_ENV_VARS } from './safety.js'
+export type { SideEffect } from './safety.js'
+export { renderCurl, shellQuote } from './curl.js'
 
 /**
  * Semantic description of the resolved request body. Used both as input to
@@ -203,6 +224,41 @@ export async function executeOperation(
   config: HttpClientConfig
 ): Promise<ExecutedRequest> {
   const prepared = await prepareRequest(operation, args, config)
+  const sideEffect = classifySideEffect(operation)
+
+  if (sideEffect === 'destructive') {
+    if (isNoDestructiveFloor()) {
+      throw new SafetyError(
+        `Destructive operation "${operation.operationId}" blocked by ${SAFETY_ENV_VARS.noDestructive}=1 (floor is absolute).`,
+        operation.operationId,
+        sideEffect,
+        'floor-blocked',
+      )
+    }
+    if (!config.allowDestructive) {
+      throw new SafetyError(
+        `Destructive operation "${operation.operationId}" requires consent. Pass --yes (CLI) or allowDestructive: true (programmatic).`,
+        operation.operationId,
+        sideEffect,
+        'no-consent',
+      )
+    }
+  }
+
+  if (config.dryRun || isDryRunFloor()) {
+    const curl = renderCurl(prepared)
+    const previewResponse = new Response(curl + '\n', {
+      status: 200,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    })
+    return {
+      response: previewResponse,
+      url: prepared.url.toString(),
+      method: prepared.method,
+      dryRun: true,
+      sideEffect,
+    }
+  }
 
   const init: RequestInit = {
     method: prepared.method,
@@ -228,7 +284,7 @@ export async function executeOperation(
     }
   }
 
-  return { response, url: prepared.url.toString(), method: prepared.method }
+  return { response, url: prepared.url.toString(), method: prepared.method, sideEffect }
 }
 
 function validateRequiredParams(

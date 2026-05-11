@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { ParsedOperation } from 'dynamic-openapi-tools/parser'
-import { renderCurl, shellQuote } from '../src/cli/curl.js'
+import { renderCurl, shellQuote } from '../src/http/curl.js'
 import type { PreparedRequest } from '../src/http/client.js'
 
 const op: ParsedOperation = {
@@ -134,5 +134,45 @@ describe('renderCurl', () => {
       })
     )
     expect(out).toContain(`--data 'hello world'`)
+  })
+
+  it('redacts Authorization, Cookie, and api-key headers to *** (case-insensitive)', () => {
+    const out = renderCurl(
+      prepared({
+        method: 'GET',
+        headers: new Headers({
+          Authorization: 'Bearer sk-secret-token',
+          Cookie: 'session=abc123',
+          'X-Api-Key': 'super-secret-api-key',
+          'X-Trace-Id': 'visible-trace',
+        }),
+      })
+    )
+    // Headers normalises names to lowercase on iteration; redaction matches that
+    expect(out.toLowerCase()).toContain('authorization: ***')
+    expect(out.toLowerCase()).toContain('cookie: ***')
+    expect(out.toLowerCase()).toContain('x-api-key: ***')
+    // Real secrets never reach the output
+    expect(out).not.toContain('sk-secret-token')
+    expect(out).not.toContain('session=abc123')
+    expect(out).not.toContain('super-secret-api-key')
+    // Non-sensitive headers pass through unchanged
+    expect(out).toContain('visible-trace')
+  })
+
+  it('also redacts proxy-authorization and set-cookie', () => {
+    const out = renderCurl(
+      prepared({
+        method: 'GET',
+        headers: new Headers({
+          'Proxy-Authorization': 'Basic dXNlcjpwYXNz',
+          'Set-Cookie': 'token=xyz',
+        }),
+      })
+    )
+    expect(out).not.toContain('dXNlcjpwYXNz')
+    expect(out).not.toContain('token=xyz')
+    expect(out.toLowerCase()).toContain('proxy-authorization: ***')
+    expect(out.toLowerCase()).toContain('set-cookie: ***')
   })
 })

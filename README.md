@@ -257,13 +257,13 @@ Every subcommand gets four global options for free:
 
 ### `--dry-run`: preview requests as curl
 
-Every CLI or bundled shim can print the resolved request as a `curl` command — URL, headers (including the ones resolved by auth), and body — without firing it:
+Every CLI or bundled shim can print the resolved request as a `curl` command — URL, headers (including the ones resolved by auth), and body — without firing it. Sensitive headers (`Authorization`, `Cookie`, `X-Api-Key` and friends) are **always redacted to `***`** so tokens never reach stdout:
 
 ```bash
 $ petstore list-pets --dry-run --limit=5 --status=available
 curl -X GET 'https://api.example.com/pets?limit=5&status=available' \
   -H 'accept: application/json' \
-  -H 'authorization: Bearer sk-…'
+  -H 'authorization: ***'
 
 $ petstore create-pet --dry-run --body='{"name":"rex"}'
 curl -X POST 'https://api.example.com/pets' \
@@ -273,6 +273,49 @@ curl -X POST 'https://api.example.com/pets' \
 ```
 
 Useful for copy-pasting into bug reports, sharing a reproducer, or feeding another tool. Works with every body kind: JSON, URL-encoded, multipart, and binary.
+
+### Safety: destructive consent and env-var floors
+
+Every operation is classified by HTTP method:
+
+| Side-effect | Methods | Behavior |
+|:------------|:--------|:---------|
+| `read-only` | `GET`, `HEAD`, `OPTIONS`, `TRACE` | runs without ceremony |
+| `write` | `POST`, `PUT`, `PATCH` | runs without ceremony |
+| `destructive` | `DELETE` (or `x-side-effect: destructive`) | requires `--yes` / `-y` |
+
+```bash
+$ petstore delete-pet 42
+safety: Destructive operation "deletePet" requires consent. Pass --yes (CLI) or allowDestructive: true (programmatic).
+$ echo $?
+3
+
+$ petstore delete-pet 42 --yes        # consent given, fires the DELETE
+$ petstore delete-pet 42 --yes --dry-run    # preview the DELETE, exit 0
+```
+
+Two environment variables act as hard floors — they are checked inside `executeOperation`, so they apply to programmatic callers too, not only to the CLI surface:
+
+| Variable | Effect |
+|:---------|:-------|
+| `DYNAMIC_OPENAPI_DRY_RUN=1` | Forces dry-run for **every** request, ignoring flags. Safe-mode for CI smoke tests against a production spec. |
+| `DYNAMIC_OPENAPI_NO_DESTRUCTIVE=1` | Rejects destructive operations even when `--yes` / `allowDestructive` is set. Absolute floor for read-only CI runners. |
+
+Override the classification at the spec level with vendor extensions:
+
+```yaml
+paths:
+  /search:
+    post:
+      operationId: searchThings
+      x-side-effect: read-only        # POST that only reads — no --yes needed
+  /admin/wipe:
+    get:
+      operationId: wipeEverything
+      x-destructive: true             # GET that's actually destructive — --yes required
+```
+
+Resolution order: `x-side-effect` > `x-destructive` sugar > HTTP method default.
 
 ### Piping bodies: `--body=-`, `--body-file`, and `@path`
 
@@ -310,6 +353,7 @@ Exit codes:
 | `0` | Success (HTTP 2xx/3xx) |
 | `1` | Network error, 5xx, or unexpected failure |
 | `2` | Validation error or HTTP 4xx |
+| `3` | Safety check failed (destructive op without `--yes`, or env-var floor blocked it) |
 
 ---
 
@@ -551,6 +595,7 @@ Global options (after the command):
       --raw                     Skip pretty-printing
   -V, --verbose                 Print HTTP status + headers to stderr
       --dry-run                 Print the equivalent curl command instead of firing the request
+  -y, --yes                     Consent to destructive operations (DELETE / x-side-effect: destructive)
 
 Request body (for operations that accept one):
       --body <string|->         Inline body; pass "-" to read from stdin
@@ -581,6 +626,8 @@ Built-in subcommands (no spec required):
 | `OPENAPI_OAUTH2_SCOPES` | Space- or comma-separated scope list (overrides spec) |
 | `OPENAPI_OAUTH2_PORT` | Loopback redirect port (default 7999) |
 | `OPENAPI_OAUTH2_REDIRECT_URI` | Full redirect URI override |
+| `DYNAMIC_OPENAPI_DRY_RUN` | When `1`, every request renders the curl equivalent and exits without firing |
+| `DYNAMIC_OPENAPI_NO_DESTRUCTIVE` | When `1`, destructive operations are rejected even when `--yes` is set |
 
 ---
 
